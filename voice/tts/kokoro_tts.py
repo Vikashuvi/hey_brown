@@ -19,7 +19,7 @@ class KokoroTTS(TTSProvider):
     MODEL_URL = "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files/kokoro-v0_19.onnx"
     VOICES_URL = "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files/voices.bin"
 
-    def __init__(self, voice: str = "bm_george", model_dir: Optional[str] = None):
+    def __init__(self, voice: str = "af_bella", model_dir: Optional[str] = None):
         self.voice = voice
         self.model_dir = model_dir or os.path.expanduser("~/.cache/brown/models/kokoro")
         self.model_path = os.path.join(self.model_dir, "kokoro-v0_19.onnx")

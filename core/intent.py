@@ -149,7 +149,21 @@ class DeterministicIntentRouter:
                 tool_args={"app_name": app_name, "device": device}
             )
 
-        # 6. Basic Conversational turns
+        # 6. Basic Conversational turns & Capabilities
+        if any(p in clean_text for p in ("what can you do", "what are the things", "what are your capabilities", "help me", "what do you do")):
+            return RoutedAction(
+                action_type="conversation",
+                direct_response="Right now, I can monitor the health and load of your computers Paperball and Error Boy, open or close apps like Safari and VS Code, launch websites, and manage voice commands."
+            )
+
+        if any(p in clean_text for p in ("check the computer", "check computers", "computer temperature", "how are the computers", "check system")):
+            device = "error_boy" if "error" in clean_text else "paperball"
+            return RoutedAction(
+                action_type="tool_call",
+                tool_name="get_system_status",
+                tool_args={"device": device}
+            )
+
         if clean_text in ("hey brown", "brown", "are you there", "brown are you there", "hello", "hi"):
             return RoutedAction(
                 action_type="conversation",

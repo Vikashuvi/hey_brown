@@ -30,20 +30,11 @@ class InterruptibleAudioPlayer(AudioOutput):
         return self._is_playing
 
     def interrupt(self) -> bool:
-        """Immediately abort audio playback and clear buffers."""
+        """Immediately flag interruption so worker thread safely stops audio."""
         with self._lock:
             if not self._is_playing:
                 return False
-
             self._interrupted.set()
-            if self._current_stream:
-                try:
-                    self._current_stream.abort()
-                    self._current_stream.close()
-                except Exception:
-                    pass
-                self._current_stream = None
-
             self._is_playing = False
             return True
 
@@ -70,13 +61,36 @@ class InterruptibleAudioPlayer(AudioOutput):
                 if data.ndim > 1:
                     data = data.flatten()
 
+                # Query device native capabilities to prevent macOS AUHAL -10851 errors
+                try:
+                    dev_info = sd.query_devices(self._device, kind="output")
+                    native_sr = int(dev_info.get("default_samplerate", sample_rate))
+                    max_ch = int(dev_info.get("max_output_channels", 1))
+                except Exception:
+                    native_sr = sample_rate
+                    max_ch = 1
+
+                # If 24kHz Kokoro audio playing on 48kHz hardware (e.g. MacBook Pro), 2x upsample
+                if sample_rate == 24000 and native_sr == 48000:
+                    data = np.repeat(data, 2)
+                    target_sr = 48000
+                else:
+                    target_sr = sample_rate
+
+                # If hardware is stereo, duplicate mono to stereo
+                if max_ch >= 2:
+                    data = np.column_stack([data, data])
+                    channels = 2
+                else:
+                    channels = 1
+
                 # Blocksize 1024 provides ~42ms audio blocks for near-instant abort
                 chunk_size = 1024
                 total_frames = len(data)
 
                 with sd.OutputStream(
-                    samplerate=sample_rate,
-                    channels=1,
+                    samplerate=target_sr,
+                    channels=channels,
                     dtype="float32",
                     device=self._device,
                     blocksize=chunk_size
@@ -87,9 +101,14 @@ class InterruptibleAudioPlayer(AudioOutput):
                     idx = 0
                     while idx < total_frames and not self._interrupted.is_set():
                         chunk = data[idx : idx + chunk_size]
-                        # If the last chunk is smaller than chunk_size, pad or write directly
                         stream.write(chunk)
                         idx += len(chunk)
+
+                    if self._interrupted.is_set():
+                        try:
+                            stream.abort()
+                        except Exception:
+                            pass
 
                 with self._lock:
                     self._current_stream = None

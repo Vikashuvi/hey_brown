@@ -43,6 +43,10 @@ class BrownOrchestrator:
         self.tool_registry = tool_registry
         self.greeting = greeting
 
+        self.barge_in_enabled = True
+        self.barge_in_grace_period_sec = 1.2  # Ignore mic for 1.2s of playback to prevent speaker echo
+        self.barge_in_min_frames = 3          # Require sustained speech to interrupt
+
         self.intent_router = DeterministicIntentRouter()
         self.state_machine = StateMachine(
             conversation_timeout=conversation_timeout,
@@ -55,12 +59,14 @@ class BrownOrchestrator:
         self._running = False
         self._loop_thread: Optional[threading.Thread] = None
 
-        # Buffers
+        # Buffers & Timing
         self._speech_buffer: List[np.ndarray] = []
         self._has_speech_started = False
         self._speech_frame_count = 0
         self._silence_frame_count = 0
-        self._barge_in_triggered = False
+        self._barge_in_frame_count = 0
+        self._speaking_start_time = 0.0
+        self._ignore_mic_until = 0.0
 
     @property
     def current_state(self) -> AssistantState:
@@ -71,14 +77,27 @@ class BrownOrchestrator:
         if new_state == AssistantState.SLEEPING:
             self._speech_buffer.clear()
             self._has_speech_started = False
+            self._barge_in_frame_count = 0
             self.wake_provider.reset()
             self.vad_provider.reset()
-        elif new_state == AssistantState.LISTENING:
+            if hasattr(self.audio_input, "clear"):
+                self.audio_input.clear()
+        elif new_state == AssistantState.SPEAKING:
+            self._speaking_start_time = time.time()
+            self._barge_in_frame_count = 0
+        elif new_state in (AssistantState.LISTENING, AssistantState.ACTIVE_CONVERSATION):
             self._speech_buffer.clear()
             self._has_speech_started = False
             self._speech_frame_count = 0
             self._silence_frame_count = 0
+            self._barge_in_frame_count = 0
             self.vad_provider.reset()
+            # Drain lingering speaker echo from microphone queue
+            if hasattr(self.audio_input, "clear"):
+                self.audio_input.clear()
+            if old_state == AssistantState.SPEAKING:
+                # 350ms acoustic cooldown to let speaker resonance completely dissipate in room
+                self._ignore_mic_until = time.time() + 0.35
 
     def start(self):
         """Start orchestrator and audio stream."""
@@ -132,6 +151,9 @@ class BrownOrchestrator:
 
             # 2. LISTENING: Monitor user speech via VAD
             elif state in (AssistantState.LISTENING, AssistantState.ACTIVE_CONVERSATION):
+                if time.time() < self._ignore_mic_until:
+                    continue
+
                 is_speech = self.vad_provider.is_speech(chunk, sample_rate=self.audio_input.sample_rate)
 
                 if is_speech:
@@ -162,18 +184,26 @@ class BrownOrchestrator:
                                 self._speech_frame_count = 0
                                 self._silence_frame_count = 0
 
-            # 3. SPEAKING: TTS is playing, check for barge-in
+            # 3. SPEAKING: TTS is playing, check for barge-in with echo protection
             elif state == AssistantState.SPEAKING:
-                # Microphone is STILL ACTIVE! Check if user interrupts by speaking
-                is_speech = self.vad_provider.is_speech(chunk, sample_rate=self.audio_input.sample_rate)
-                if is_speech:
-                    print("[Brown] Barge-in speech detected! Halting TTS output immediately.")
-                    self.audio_output.interrupt()
-                    self.state_machine.transition_to(AssistantState.LISTENING, reason="barge_in_interruption")
-                    self._speech_buffer.append(chunk)
-                    self._has_speech_started = True
-                    self._speech_frame_count = 1
-                    self._silence_frame_count = 0
+                if self.barge_in_enabled:
+                    now = time.time()
+                    # Only check barge-in after the grace period has passed (prevents speaker echo)
+                    if now - self._speaking_start_time >= self.barge_in_grace_period_sec:
+                        is_speech = self.vad_provider.is_speech(chunk, sample_rate=self.audio_input.sample_rate)
+                        if is_speech:
+                            self._barge_in_frame_count += 1
+                            # Require sustained speech (at least min_frames) to trigger interruption
+                            if self._barge_in_frame_count >= self.barge_in_min_frames:
+                                print("[Brown] Barge-in speech detected! Halting TTS output immediately.")
+                                self.audio_output.interrupt()
+                                self.state_machine.transition_to(AssistantState.LISTENING, reason="barge_in_interruption")
+                                self._speech_buffer.append(chunk)
+                                self._has_speech_started = True
+                                self._speech_frame_count = 1
+                                self._silence_frame_count = 0
+                        else:
+                            self._barge_in_frame_count = max(0, self._barge_in_frame_count - 1)
 
     def _handle_transcription_and_action(self, audio_data: np.ndarray):
         """Transcribe speech and execute routed action."""

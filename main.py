@@ -2,6 +2,7 @@ import os
 import sys
 import time
 import yaml
+import numpy as np
 from typing import Dict, Any
 
 from core.orchestrator import BrownOrchestrator
@@ -13,6 +14,7 @@ from devices.error_boy import ErrorBoyAgent
 from voice.audio.stream import MicrophoneStream
 from voice.audio.player import InterruptibleAudioPlayer
 from voice.wake.openwakeword_provider import OpenWakeWordProvider
+from voice.wake.brown_wake_provider import BrownWakeWordProvider
 from voice.vad.silero_vad import SileroVADProvider
 from voice.stt.faster_whisper_stt import FasterWhisperSTT
 from voice.tts.kokoro_tts import KokoroTTS
@@ -53,13 +55,6 @@ def build_orchestrator(config: Dict[str, Any]) -> BrownOrchestrator:
     audio_out = InterruptibleAudioPlayer()
 
     # 4. Providers
-    wake_cfg = config.get("wake", {})
-    wake_models = [wake_cfg.get("model_name", "hey_jarvis")]
-    wake_provider = OpenWakeWordProvider(model_names=wake_models, threshold=wake_cfg.get("threshold", 0.5))
-
-    vad_cfg = config.get("vad", {})
-    vad_provider = SileroVADProvider(threshold=vad_cfg.get("threshold", 0.5))
-
     stt_cfg = config.get("stt", {})
     stt_provider = FasterWhisperSTT(
         model_size=stt_cfg.get("model_size", "base.en"),
@@ -68,8 +63,19 @@ def build_orchestrator(config: Dict[str, Any]) -> BrownOrchestrator:
         threads=stt_cfg.get("threads", 4)
     )
 
+    wake_cfg = config.get("wake", {})
+    provider_type = wake_cfg.get("provider", "brown")
+    if provider_type == "brown":
+        wake_provider = BrownWakeWordProvider(stt_provider=stt_provider)
+    else:
+        wake_models = [wake_cfg.get("model_name", "alexa")]
+        wake_provider = OpenWakeWordProvider(model_names=wake_models, threshold=wake_cfg.get("threshold", 0.5))
+
+    vad_cfg = config.get("vad", {})
+    vad_provider = SileroVADProvider(threshold=vad_cfg.get("threshold", 0.5))
+
     tts_cfg = config.get("tts", {})
-    tts_provider = KokoroTTS(voice=tts_cfg.get("voice", "af_heart"))
+    tts_provider = KokoroTTS(voice=tts_cfg.get("voice", "af_bella"))
 
     # 5. Orchestrator
     conv_cfg = config.get("conversation", {})
@@ -86,6 +92,9 @@ def build_orchestrator(config: Dict[str, Any]) -> BrownOrchestrator:
         min_silence_duration_ms=vad_cfg.get("min_silence_duration_ms", 700),
         greeting=conv_cfg.get("greeting", "Yeah, I'm here. What can I do for you?")
     )
+    orchestrator.barge_in_enabled = conv_cfg.get("barge_in_enabled", True)
+    orchestrator.barge_in_grace_period_sec = conv_cfg.get("barge_in_grace_period_sec", 1.2)
+    orchestrator.barge_in_min_frames = conv_cfg.get("barge_in_min_frames", 3)
     return orchestrator
 
 
@@ -123,7 +132,7 @@ def main():
 
     try:
         orchestrator.start()
-        print("\nBrown is actively listening. Say 'Hey Jarvis' / 'Hey Brown' to activate.")
+        print("\nBrown is actively listening. Say 'Hey Brown' or 'Brown' to activate.")
         print("Press Ctrl+C to exit.\n")
         while True:
             time.sleep(0.5)

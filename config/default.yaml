@@ -6,16 +6,15 @@ audio:
   output_device: null    # default system output
 
 wake:
-  provider: "openwakeword"
-  model_name: "hey_jarvis"   # openwakeword built-in or custom hey_brown
+  provider: "brown"              # native "Hey Brown" / "Brown" detector
+  model_name: "hey_brown"
   threshold: 0.5
-  inference_framework: "onnx"
 
 vad:
   provider: "silero"
   threshold: 0.5
   min_speech_duration_ms: 250
-  min_silence_duration_ms: 700   # 700ms silence marks end-of-speech
+  min_silence_duration_ms: 1300  # 1.3s natural pause window (prevents cutting off mid-sentence thinking)
 
 stt:
   provider: "faster-whisper"
@@ -26,14 +25,20 @@ stt:
 
 tts:
   provider: "kokoro"
-  voice: "bm_george"              # natural, warm British voice (JARVIS-style)
+  voice: "af_bella"              # natural, expressive American female voice
   speed: 1.0
   lang: "en-us"
 
 conversation:
   timeout_seconds: 8.0           # follow-up listening window before returning to sleep
   greeting: "Yeah, I'm here. What can I do for you?"
-  barge_in_enabled: true
+  # Barge-in settings:
+  # When using laptop built-in speakers, set barge_in_enabled to false to prevent the
+  # microphone from hearing the speaker and cutting off playback (acoustic feedback).
+  # If wearing headphones/earphones (AirPods, etc.), barge_in_enabled can be set to true.
+  barge_in_enabled: false
+  barge_in_grace_period_sec: 1.2 # ignore mic for first 1.2s of playback to prevent speaker echo
+  barge_in_min_frames: 3         # require sustained speech to interrupt
 
 devices:
   paperball:

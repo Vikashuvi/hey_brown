@@ -31,18 +31,20 @@ def print_banner():
 def test_1_voice_output():
     print("👉 [Test 1/4] Testing Local Human Voice (Kokoro-82M ONNX)...")
     print("Synthesizing speech...")
-    tts = KokoroTTS(voice="bm_george")
+    tts = KokoroTTS(voice="af_bella")
+    player = InterruptibleAudioPlayer()
     text = "Hello! I am Brown, your personal computer assistant. All local neural systems are fully operational."
     samples, sr = tts.synthesize(text)
-    print(f"Playing through your speakers: \"{text}\"")
-    sd.play(samples, sr)
-    sd.wait()
+    print(f"Playing through your speakers (af_bella): \"{text}\"")
+    player.play(samples, sr)
+    while player.is_playing:
+        time.sleep(0.05)
     print("✅ Test 1 Complete! You should have heard Brown's voice.\n")
 
 
 def test_2_barge_in():
     print("👉 [Test 2/4] Testing Instant Hardware Barge-In (Interruption)...")
-    tts = KokoroTTS(voice="bm_george")
+    tts = KokoroTTS(voice="af_bella")
     player = InterruptibleAudioPlayer()
     
     long_text = (

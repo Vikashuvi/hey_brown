@@ -185,6 +185,8 @@ def test_orchestrator_barge_in():
         tool_registry=registry,
         conversation_timeout=1.0
     )
+    orch.barge_in_grace_period_sec = 0.0
+    orch.barge_in_min_frames = 1
 
     orch.start()
 
