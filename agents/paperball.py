@@ -2,8 +2,7 @@ import os
 import re
 import subprocess
 import urllib.parse
-from typing import Optional
-from devices.base import DeviceAgent, DeviceCommandResult
+from agents.base import DeviceAgent, DeviceCommandResult
 
 
 class PaperballAgent(DeviceAgent):

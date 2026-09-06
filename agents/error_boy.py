@@ -1,6 +1,6 @@
 import requests
 from typing import Optional, Dict, Any
-from devices.base import DeviceAgent, DeviceCommandResult
+from agents.base import DeviceAgent, DeviceCommandResult
 
 
 class ErrorBoyAgent(DeviceAgent):
