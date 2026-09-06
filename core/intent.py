@@ -37,10 +37,10 @@ class DeterministicIntentRouter:
 
     # Precompiled regex patterns for zero runtime regex compilation latency (<0.05ms)
     RE_TRAILING_PUNCT = re.compile(r"[?!.,]+$")
-    RE_STATUS = re.compile(r"(?:how is|what is|how's|what's) (?:the )?(?:status of )?(paperball|error boy)")
-    RE_OPEN_URL = re.compile(r"^(?:open|launch|go to)\s+(?:website\s+)?(https?://\S+|www\.\S+|\S+\.(?:com|org|io|dev|net|edu|ai)|[a-zA-Z]+)(?:\s+on\s+(paperball|error boy))?$")
-    RE_OPEN_APP = re.compile(r"^(?:open|launch|start)\s+([a-zA-Z0-9\s]+?)(?:\s+on\s+(paperball|error boy))?$")
-    RE_CLOSE_APP = re.compile(r"^(?:close|quit|exit|kill)\s+([a-zA-Z0-9\s]+?)(?:\s+on\s+(paperball|error boy))?$")
+    RE_STATUS = re.compile(r"(?:how is|what is|how's|what's|check|show|get) (?:the )?(?:status of |health of |load of |temperature of )?(paperball|error boy|computer|computers|system|laptop)")
+    RE_OPEN_URL = re.compile(r"(?:can you |could you |please )?(?:open|launch|go to)\s+(?:website\s+)?(https?://\S+|www\.\S+|\S+\.(?:com|org|io|dev|net|edu|ai)|[a-zA-Z]+)(?:\s+on\s+(paperball|error boy))?(?:\s+for me|\s+please)?")
+    RE_OPEN_APP = re.compile(r"(?:can you |could you |please )?(?:open|launch|start)\s+(?:up\s+)?([a-zA-Z0-9\s]+?)(?:\s+on\s+(paperball|error boy))?(?:\s+for me|\s+please)?$")
+    RE_CLOSE_APP = re.compile(r"(?:can you |could you |please )?(?:close|quit|exit|kill)\s+([a-zA-Z0-9\s]+?)(?:\s+on\s+(paperball|error boy))?(?:\s+for me|\s+please)?$")
 
     def route(self, text: str) -> RoutedAction:
         clean_text = text.lower().strip()

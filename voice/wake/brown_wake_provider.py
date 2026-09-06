@@ -17,17 +17,23 @@ class BrownWakeWordProvider(WakeWordProvider):
     - Zero cloud dependencies, 100% private, runs entirely on-device.
     """
 
-    TRIGGER_WORDS = ["brown", "hey brown", "hey, brown", "yo brown", "hello brown"]
+    DEFAULT_TRIGGER_PHRASES = [
+        "brown", "hey brown", "wake up brown", "daddy is home", "hello brown", "yo brown"
+    ]
 
     def __init__(
         self,
         stt_provider: STTProvider,
+        trigger_phrases: Optional[List[str]] = None,
         vad_threshold: float = 0.5,
         min_speech_ms: int = 240,
         silence_timeout_ms: int = 240,
-        max_utterance_ms: int = 2200,
+        max_utterance_ms: int = 3000,
     ):
         self.stt_provider = stt_provider
+        raw_phrases = trigger_phrases or self.DEFAULT_TRIGGER_PHRASES
+        # Normalize triggers to lowercase stripped
+        self.trigger_phrases = [p.lower().strip() for p in raw_phrases]
         self.vad_provider = SileroVADProvider(threshold=vad_threshold)
         self.min_speech_frames = max(2, int(min_speech_ms / 80))
         self.silence_timeout_frames = max(2, int(silence_timeout_ms / 80))
@@ -105,9 +111,9 @@ class BrownWakeWordProvider(WakeWordProvider):
             # Strip punctuation
             clean_text = "".join(c for c in transcript if c.isalnum() or c.isspace())
 
-            # Check for wake word
-            for trigger in self.TRIGGER_WORDS:
-                if trigger in clean_text or "brown" in clean_text.split():
+            # Check for configured wake phrases
+            for trigger in self.trigger_phrases:
+                if trigger in clean_text:
                     return "hey_brown"
 
         except Exception as e:

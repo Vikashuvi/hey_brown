@@ -57,3 +57,30 @@ def test_brown_wake_provider_ignores_unrelated_speech():
 
     assert detected is None
     assert mock_stt.call_count == 1
+
+
+def test_brown_wake_custom_phrase():
+    mock_stt = MockSTT("Wake up Brown daddy is home")
+    provider = BrownWakeWordProvider(
+        stt_provider=mock_stt,
+        trigger_phrases=["daddy is home", "wake up brown"],
+        min_speech_ms=80,
+        silence_timeout_ms=80
+    )
+    provider.start()
+
+    t = np.linspace(0, 0.08, 1280, False)
+    speech_frame = (np.sin(t * 300 * 2 * np.pi) * 0.5).astype(np.float32)
+    silence_frame = np.zeros(1280, dtype=np.float32)
+
+    for _ in range(3):
+        provider.process_frame(speech_frame)
+
+    detected = None
+    for _ in range(3):
+        res = provider.process_frame(silence_frame)
+        if res:
+            detected = res
+
+    assert detected == "hey_brown"
+    assert mock_stt.call_count == 1

@@ -66,7 +66,8 @@ def build_orchestrator(config: Dict[str, Any]) -> BrownOrchestrator:
     wake_cfg = config.get("wake", {})
     provider_type = wake_cfg.get("provider", "brown")
     if provider_type == "brown":
-        wake_provider = BrownWakeWordProvider(stt_provider=stt_provider)
+        triggers = wake_cfg.get("trigger_phrases", None)
+        wake_provider = BrownWakeWordProvider(stt_provider=stt_provider, trigger_phrases=triggers)
     else:
         wake_models = [wake_cfg.get("model_name", "alexa")]
         wake_provider = OpenWakeWordProvider(model_names=wake_models, threshold=wake_cfg.get("threshold", 0.5))

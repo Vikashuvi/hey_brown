@@ -6,9 +6,15 @@ audio:
   output_device: null    # default system output
 
 wake:
-  provider: "brown"              # native "Hey Brown" / "Brown" detector
-  model_name: "hey_brown"
+  provider: "brown"              # native Brown detector
   threshold: 0.5
+  trigger_phrases:
+    - "brown"
+    - "hey brown"
+    - "wake up brown"
+    - "daddy is home"
+    - "hello brown"
+    - "yo brown"
 
 vad:
   provider: "silero"

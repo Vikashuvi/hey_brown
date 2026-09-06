@@ -18,6 +18,12 @@ def test_intent_router_open_apps():
     assert r2.tool_args["app_name"] == "Visual Studio Code"
     assert r2.tool_args["device"] == "error_boy"
 
+    # Natural conversational command
+    r3 = router.route("can you please open Safari for me")
+    assert r3.action_type == "tool_call"
+    assert r3.tool_name == "open_application"
+    assert r3.tool_args["app_name"] == "Safari"
+
 
 def test_intent_router_open_urls():
     router = DeterministicIntentRouter()
