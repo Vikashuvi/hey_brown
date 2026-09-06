@@ -18,7 +18,7 @@ class MicrophoneStream(AudioInput):
         self._sample_rate = sample_rate
         self._chunk_size = chunk_size
         self._device = device
-        self._queue: queue.Queue = queue.Queue()
+        self._queue: queue.Queue = queue.Queue(maxsize=100)
         self._stream = None
         self._is_running = False
 
@@ -31,14 +31,17 @@ class MicrophoneStream(AudioInput):
         return self._chunk_size
 
     def _audio_callback(self, indata, frames, time_info, status):
-        if status:
-            pass  # Overflow or underflow
-        # Copy audio array so buffer can be reused by sounddevice
-        # Convert to float32 mono [-1.0, 1.0] if not already
-        data = indata.copy().flatten()
-        if data.dtype == np.int16:
-            data = data.astype(np.float32) / 32768.0
-        self._queue.put(data)
+        # Extract mono float32 channel directly without redundant copies
+        data = indata[:, 0].copy()
+        try:
+            self._queue.put_nowait(data)
+        except queue.Full:
+            # If buffer full due to spike, drop oldest frame to prevent latency drift
+            try:
+                self._queue.get_nowait()
+                self._queue.put_nowait(data)
+            except Exception:
+                pass
 
     def start(self):
         if self._is_running:

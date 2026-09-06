@@ -70,7 +70,8 @@ class InterruptibleAudioPlayer(AudioOutput):
                 if data.ndim > 1:
                     data = data.flatten()
 
-                chunk_size = 2048
+                # Blocksize 1024 provides ~42ms audio blocks for near-instant abort
+                chunk_size = 1024
                 total_frames = len(data)
 
                 with sd.OutputStream(

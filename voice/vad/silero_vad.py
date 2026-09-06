@@ -56,32 +56,37 @@ class SileroVADProvider(VADProvider):
         except Exception as e:
             print(f"[SileroVAD] Error initializing Silero model: {e}. Using fallback energy detector.")
 
-        # Fallback to RMS energy if model is not loaded
-        if self._session is None:
-            energy = np.sqrt(np.mean(np.square(audio_chunk)))
-            return bool(energy > 0.015)
-
-        # Pad or slice to 512 samples if needed for Silero v4
+        # Scan audio chunk in 512-sample windows to cover the full frame
         chunk = audio_chunk.astype(np.float32)
-        if len(chunk) < 512:
-            chunk = np.pad(chunk, (0, 512 - len(chunk)))
-        elif len(chunk) > 512:
-            chunk = chunk[:512]
-
-        chunk = chunk[np.newaxis, :]  # Shape: (1, 512)
         sr = np.array(sample_rate, dtype=np.int64)
+        window_size = 512
 
         try:
-            inputs = {
-                "input": chunk,
-                "sr": sr,
-                "h": self._h,
-                "c": self._c
-            }
-            out, self._h, self._c = self._session.run(None, inputs)
-            probability = float(out[0][0])
-            return probability >= self.threshold
-        except Exception as e:
-            # On shape mismatch or older model version, fallback to energy check
-            energy = np.sqrt(np.mean(np.square(audio_chunk)))
-            return bool(energy > 0.015)
+            # Check RMS energy first as a micro-fast filter
+            rms = np.sqrt(np.mean(np.square(chunk)))
+            if rms < 0.005:
+                return False
+
+            num_windows = max(1, (len(chunk) + window_size - 1) // window_size)
+            for i in range(num_windows):
+                start = i * window_size
+                sub_chunk = chunk[start : start + window_size]
+                if len(sub_chunk) < window_size:
+                    sub_chunk = np.pad(sub_chunk, (0, window_size - len(sub_chunk)))
+
+                sub_input = sub_chunk[np.newaxis, :]
+                inputs = {
+                    "input": sub_input,
+                    "sr": sr,
+                    "h": self._h,
+                    "c": self._c
+                }
+                out, self._h, self._c = self._session.run(None, inputs)
+                prob = float(out[0][0])
+                if prob >= self.threshold:
+                    return True
+
+            return False
+        except Exception:
+            # Fallback to RMS energy if model run fails
+            return bool(rms > 0.015)

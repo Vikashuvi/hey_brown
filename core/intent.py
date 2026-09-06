@@ -35,17 +35,23 @@ class DeterministicIntentRouter:
 
     STOP_WORDS = {"stop", "stop speaking", "cancel", "quiet", "shut up", "hold on", "wait", "actually stop"}
 
+    # Precompiled regex patterns for zero runtime regex compilation latency (<0.05ms)
+    RE_TRAILING_PUNCT = re.compile(r"[?!.,]+$")
+    RE_STATUS = re.compile(r"(?:how is|what is|how's|what's) (?:the )?(?:status of )?(paperball|error boy)")
+    RE_OPEN_URL = re.compile(r"^(?:open|launch|go to)\s+(?:website\s+)?(https?://\S+|www\.\S+|\S+\.(?:com|org|io|dev|net|edu|ai)|[a-zA-Z]+)(?:\s+on\s+(paperball|error boy))?$")
+    RE_OPEN_APP = re.compile(r"^(?:open|launch|start)\s+([a-zA-Z0-9\s]+?)(?:\s+on\s+(paperball|error boy))?$")
+    RE_CLOSE_APP = re.compile(r"^(?:close|quit|exit|kill)\s+([a-zA-Z0-9\s]+?)(?:\s+on\s+(paperball|error boy))?$")
+
     def route(self, text: str) -> RoutedAction:
         clean_text = text.lower().strip()
-        # Remove trailing punctuation
-        clean_text = re.sub(r"[?!.,]+$", "", clean_text).strip()
+        clean_text = self.RE_TRAILING_PUNCT.sub("", clean_text).strip()
 
         # 1. Stop / Interruption
         if clean_text in self.STOP_WORDS:
             return RoutedAction(action_type="stop", direct_response="Stopped.")
 
         # 2. Status / Health queries
-        status_match = re.search(r"(?:how is|what is|how's|what's) (?:the )?(?:status of )?(paperball|error boy)", clean_text)
+        status_match = self.RE_STATUS.search(clean_text)
         if status_match:
             device = "error_boy" if "error" in status_match.group(1) else "paperball"
             return RoutedAction(
@@ -64,7 +70,7 @@ class DeterministicIntentRouter:
 
         # 3. Open Website / URL
         # e.g., "open youtube", "open github.com", "open https://example.com"
-        open_url_match = re.search(r"^(?:open|launch|go to)\s+(?:website\s+)?(https?://\S+|www\.\S+|\S+\.(?:com|org|io|dev|net|edu|ai)|[a-zA-Z]+)(?:\s+on\s+(paperball|error boy))?$", clean_text)
+        open_url_match = self.RE_OPEN_URL.search(clean_text)
         if open_url_match:
             target = open_url_match.group(1).lower()
             device = "error_boy" if (open_url_match.group(2) and "error" in open_url_match.group(2)) else "paperball"
@@ -84,7 +90,7 @@ class DeterministicIntentRouter:
 
         # 4. Open Application
         # e.g., "open Safari", "launch Terminal", "open VS Code on Error Boy"
-        open_app_match = re.search(r"^(?:open|launch|start)\s+([a-zA-Z0-9\s]+?)(?:\s+on\s+(paperball|error boy))?$", clean_text)
+        open_app_match = self.RE_OPEN_APP.search(clean_text)
         if open_app_match:
             app_raw = open_app_match.group(1).strip()
             device = "error_boy" if (open_app_match.group(2) and "error" in open_app_match.group(2)) else "paperball"
@@ -124,7 +130,7 @@ class DeterministicIntentRouter:
             )
 
         # 5. Close Application
-        close_app_match = re.search(r"^(?:close|quit|exit|kill)\s+([a-zA-Z0-9\s]+?)(?:\s+on\s+(paperball|error boy))?$", clean_text)
+        close_app_match = self.RE_CLOSE_APP.search(clean_text)
         if close_app_match:
             app_raw = close_app_match.group(1).strip()
             device = "error_boy" if (close_app_match.group(2) and "error" in close_app_match.group(2)) else "paperball"
