@@ -1,0 +1,46 @@
+audio:
+  sample_rate: 16000
+  channels: 1
+  chunk_size: 1280       # 80ms at 16kHz
+  input_device: null     # default system mic
+  output_device: null    # default system output
+
+wake:
+  provider: "openwakeword"
+  model_name: "hey_jarvis"   # openwakeword built-in or custom hey_brown
+  threshold: 0.5
+  inference_framework: "onnx"
+
+vad:
+  provider: "silero"
+  threshold: 0.5
+  min_speech_duration_ms: 250
+  min_silence_duration_ms: 700   # 700ms silence marks end-of-speech
+
+stt:
+  provider: "faster-whisper"
+  model_size: "base.en"          # or tiny.en
+  device: "cpu"
+  compute_type: "int8"
+  threads: 4
+
+tts:
+  provider: "kokoro"
+  voice: "bm_george"              # natural, warm British voice (JARVIS-style)
+  speed: 1.0
+  lang: "en-us"
+
+conversation:
+  timeout_seconds: 8.0           # follow-up listening window before returning to sleep
+  greeting: "Yeah, I'm here. What can I do for you?"
+  barge_in_enabled: true
+
+devices:
+  paperball:
+    enabled: true
+    is_local: true
+  error_boy:
+    enabled: true
+    is_local: false
+    base_url: "http://error-boy.local:8765"
+    timeout: 2.0

@@ -1,0 +1,44 @@
+# Python virtual environments
+.venv/
+env/
+venv/
+ENV/
+*.egg-info/
+dist/
+build/
+
+# Byte-compiled / cache
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+
+# Audio outputs / recordings
+*.wav
+*.mp3
+*.ogg
+*.flac
+tests/test_output_*.wav
+
+# Model caches & downloaded weights
+models/
+*.onnx
+*.tflite
+*.bin
+!voice/wake/models/.gitkeep
+
+# macOS metadata
+.DS_Store
+._*
+.AppleDouble
+.LSOverride
+
+# IDEs
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Environment / local secrets
+.env
+.env.local
