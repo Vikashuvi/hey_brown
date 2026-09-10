@@ -42,3 +42,4 @@ models/
 # Environment / local secrets
 .env
 .env.local
+config/local.yaml

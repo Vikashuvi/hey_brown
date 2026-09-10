@@ -122,3 +122,45 @@ class PaperballAgent(DeviceAgent):
                 success=False,
                 message=f"Failed to query Paperball system status: {str(e)}"
             )
+
+    def get_running_apps(self) -> DeviceCommandResult:
+        try:
+            script = 'tell application "System Events" to get name of every process whose visible is true'
+            proc = subprocess.run(["osascript", "-e", script], capture_output=True, text=True, timeout=4)
+            if proc.returncode == 0:
+                raw_apps = proc.stdout.strip().split(", ")
+                apps = [a.strip() for a in raw_apps if a.strip()]
+                return DeviceCommandResult(
+                    success=True,
+                    message=f"Paperball is currently running: {', '.join(apps)}.",
+                    data={"running_apps": apps}
+                )
+            else:
+                return DeviceCommandResult(
+                    success=False,
+                    message=f"Failed to query running apps on Paperball: {proc.stderr.strip()}"
+                )
+        except Exception as e:
+            return DeviceCommandResult(
+                success=False,
+                message=f"Error querying running apps on Paperball: {str(e)}"
+            )
+
+    def get_device_capabilities(self) -> DeviceCommandResult:
+        return DeviceCommandResult(
+            success=True,
+            message="Paperball device capabilities retrieved.",
+            data={
+                "device": "paperball",
+                "os": "macOS",
+                "capabilities": [
+                    "get_device_status",
+                    "get_running_apps",
+                    "open_application",
+                    "close_application",
+                    "open_url",
+                    "get_device_capabilities"
+                ],
+                "version": "1.0.0"
+            }
+        )

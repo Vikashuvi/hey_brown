@@ -1,0 +1,15 @@
+[Unit]
+Description=Brown AI Assistant - Error Boy Agent Daemon
+After=network.target graphical-session.target
+
+[Service]
+Type=simple
+# Ensure DISPLAY and WAYLAND_DISPLAY are inherited for GUI app launches
+Environment=PYTHONUNBUFFERED=1
+Environment=DISPLAY=:0
+ExecStart=/usr/bin/python3 -m devices.error_boy_server --port 8765
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=default.target

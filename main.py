@@ -7,7 +7,7 @@ from typing import Dict, Any
 
 from core.orchestrator import BrownOrchestrator
 from tools.base import ToolRegistry
-from tools.system_tools import OpenAppTool, CloseAppTool, OpenUrlTool, SystemStatusTool
+from tools.system_tools import OpenAppTool, CloseAppTool, OpenUrlTool, SystemStatusTool, GetRunningAppsTool, GetCapabilitiesTool
 from devices.paperball import PaperballAgent
 from devices.error_boy import ErrorBoyAgent
 
@@ -21,18 +21,34 @@ from voice.tts.kokoro_tts import KokoroTTS
 
 
 def load_config(path: str = "config/default.yaml") -> Dict[str, Any]:
-    if not os.path.exists(path):
-        return {}
-    with open(path, "r") as f:
-        return yaml.safe_load(f) or {}
+    cfg: Dict[str, Any] = {}
+    if os.path.exists(path):
+        with open(path, "r") as f:
+            cfg = yaml.safe_load(f) or {}
+
+    # Merge gitignored private local overrides (config/local.yaml) if present
+    local_path = "config/local.yaml"
+    if os.path.exists(local_path):
+        with open(local_path, "r") as f:
+            local_cfg = yaml.safe_load(f) or {}
+            if "devices" in local_cfg:
+                cfg.setdefault("devices", {})
+                for k, v in local_cfg["devices"].items():
+                    if isinstance(v, dict):
+                        cfg["devices"].setdefault(k, {}).update(v)
+                    else:
+                        cfg["devices"][k] = v
+
+    return cfg
 
 
 def build_orchestrator(config: Dict[str, Any]) -> BrownOrchestrator:
     # 1. Device agents
     paperball = PaperballAgent()
     eb_cfg = config.get("devices", {}).get("error_boy", {})
+    eb_url = os.environ.get("ERROR_BOY_BASE_URL") or eb_cfg.get("base_url", "http://error-boy.local:8765")
     error_boy = ErrorBoyAgent(
-        base_url=eb_cfg.get("base_url", "http://error-boy.local:8765"),
+        base_url=eb_url,
         timeout=eb_cfg.get("timeout", 2.0)
     )
     devices = {
@@ -46,6 +62,8 @@ def build_orchestrator(config: Dict[str, Any]) -> BrownOrchestrator:
     registry.register(CloseAppTool(devices))
     registry.register(OpenUrlTool(devices))
     registry.register(SystemStatusTool(devices))
+    registry.register(GetRunningAppsTool(devices))
+    registry.register(GetCapabilitiesTool(devices))
 
     # 3. Audio stream & player
     audio_cfg = config.get("audio", {})

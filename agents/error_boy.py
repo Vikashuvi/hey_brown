@@ -4,9 +4,10 @@ from agents.base import DeviceAgent, DeviceCommandResult
 
 
 class ErrorBoyAgent(DeviceAgent):
-    """Remote Linux device agent endpoint for Error Boy (Arch Linux).
-    Communicates via authenticated HTTP / JSON API.
-    Handles offline state gracefully so Paperball never blocks or fails.
+    """Remote Linux device agent client for Error Boy (Arch Linux).
+    Communicates strictly via authenticated HTTP / JSON REST API.
+    Provides typed capabilities with short timeouts (default 2.0s) so Brown
+    never freezes when Error Boy is offline or unreachable.
     """
 
     def __init__(self, base_url: str = "http://error-boy.local:8765", auth_token: Optional[str] = None, timeout: float = 2.0):
@@ -20,6 +21,7 @@ class ErrorBoyAgent(DeviceAgent):
 
     @property
     def is_online(self) -> bool:
+        """Check whether Error Boy is reachable on the network."""
         try:
             headers = {}
             if self.auth_token:
@@ -29,18 +31,27 @@ class ErrorBoyAgent(DeviceAgent):
         except Exception:
             return False
 
-    def _send_command(self, endpoint: str, payload: Dict[str, Any]) -> DeviceCommandResult:
+    def _send_command(self, endpoint: str, payload: Optional[Dict[str, Any]] = None, method: str = "POST") -> DeviceCommandResult:
+        """Issue an authenticated, timeout-bounded HTTP request to Error Boy."""
         try:
             headers = {"Content-Type": "application/json"}
             if self.auth_token:
                 headers["Authorization"] = f"Bearer {self.auth_token}"
-            resp = requests.post(
-                f"{self.base_url}/{endpoint}",
-                json=payload,
-                headers=headers,
-                timeout=self.timeout
-            )
-            data = resp.json()
+
+            url = f"{self.base_url}/{endpoint.lstrip('/')}"
+            if method.upper() == "GET":
+                resp = requests.get(url, headers=headers, timeout=self.timeout)
+            else:
+                resp = requests.post(url, json=payload or {}, headers=headers, timeout=self.timeout)
+
+            try:
+                data = resp.json()
+            except Exception:
+                return DeviceCommandResult(
+                    success=resp.status_code == 200,
+                    message=f"Received status {resp.status_code} from Error Boy."
+                )
+
             return DeviceCommandResult(
                 success=data.get("success", False),
                 message=data.get("message", "Error Boy executed command."),
@@ -62,14 +73,29 @@ class ErrorBoyAgent(DeviceAgent):
                 message=f"Communication error with Error Boy: {str(e)}"
             )
 
-    def open_application(self, app_name: str) -> DeviceCommandResult:
-        return self._send_command("apps/open", {"application": app_name})
-
-    def close_application(self, app_name: str) -> DeviceCommandResult:
-        return self._send_command("apps/close", {"application": app_name})
-
-    def open_url(self, url: str) -> DeviceCommandResult:
-        return self._send_command("browser/open", {"url": url})
-
+    # 1. Device Status
     def get_system_status(self) -> DeviceCommandResult:
-        return self._send_command("system/status", {})
+        return self._send_command("system/status", method="GET")
+
+    def get_device_status(self) -> DeviceCommandResult:
+        return self.get_system_status()
+
+    # 2. Running Applications
+    def get_running_apps(self) -> DeviceCommandResult:
+        return self._send_command("apps/running", method="GET")
+
+    # 3. Open Application
+    def open_application(self, app_name: str) -> DeviceCommandResult:
+        return self._send_command("apps/open", {"application": app_name}, method="POST")
+
+    # 4. Close Application
+    def close_application(self, app_name: str) -> DeviceCommandResult:
+        return self._send_command("apps/close", {"application": app_name}, method="POST")
+
+    # 5. Open URL
+    def open_url(self, url: str) -> DeviceCommandResult:
+        return self._send_command("browser/open", {"url": url}, method="POST")
+
+    # 6. Capabilities Discovery
+    def get_device_capabilities(self) -> DeviceCommandResult:
+        return self._send_command("capabilities", method="GET")

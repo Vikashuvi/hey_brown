@@ -45,3 +45,17 @@ class DeviceAgent(ABC):
     def get_system_status(self) -> DeviceCommandResult:
         """Get CPU/memory/status overview safely."""
         pass
+
+    def get_device_status(self) -> DeviceCommandResult:
+        """Alias for get_system_status for consistent capability naming."""
+        return self.get_system_status()
+
+    @abstractmethod
+    def get_running_apps(self) -> DeviceCommandResult:
+        """Safely list running user applications on this device."""
+        pass
+
+    @abstractmethod
+    def get_device_capabilities(self) -> DeviceCommandResult:
+        """Retrieve the typed capabilities and OS metadata supported by this device."""
+        pass

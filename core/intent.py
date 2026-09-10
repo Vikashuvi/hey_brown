@@ -35,12 +35,69 @@ class DeterministicIntentRouter:
 
     STOP_WORDS = {"stop", "stop speaking", "cancel", "quiet", "shut up", "hold on", "wait", "actually stop"}
 
+    TARGET_DEVICES = r"(?:paperball|mac(?:book)?|laptop|local(?:ly)?|error\s*boy|error_boy|error|arch(?:\s*linux)?|linux|secondary(?:\s*machine)?|victus|pc)"
+
     # Precompiled regex patterns for zero runtime regex compilation latency (<0.05ms)
     RE_TRAILING_PUNCT = re.compile(r"[?!.,]+$")
-    RE_STATUS = re.compile(r"(?:how is|what is|how's|what's|check|show|get) (?:the )?(?:status of |health of |load of |temperature of )?(paperball|error boy|computer|computers|system|laptop)")
-    RE_OPEN_URL = re.compile(r"(?:can you |could you |please )?(?:open|launch|go to)\s+(?:website\s+)?(https?://\S+|www\.\S+|\S+\.(?:com|org|io|dev|net|edu|ai)|[a-zA-Z]+)(?:\s+on\s+(paperball|error boy))?(?:\s+for me|\s+please)?")
-    RE_OPEN_APP = re.compile(r"(?:can you |could you |please )?(?:open|launch|start)\s+(?:up\s+)?([a-zA-Z0-9\s]+?)(?:\s+on\s+(paperball|error boy))?(?:\s+for me|\s+please)?$")
-    RE_CLOSE_APP = re.compile(r"(?:can you |could you |please )?(?:close|quit|exit|kill)\s+([a-zA-Z0-9\s]+?)(?:\s+on\s+(paperball|error boy))?(?:\s+for me|\s+please)?$")
+    RE_STATUS = re.compile(
+        rf"(?:how is|what is|how's|what's|check|show|get) (?:the )?(?:status of |health of |load of |temperature of )?({TARGET_DEVICES}|computer|computers|system)",
+        re.IGNORECASE
+    )
+    RE_OPEN_URL = re.compile(
+        rf"(?:can you |could you |please )?(?:open|launch|go to)\s+(?:website\s+)?(https?://\S+|www\.\S+|\S+\.(?:com|org|io|dev|net|edu|ai)|[a-zA-Z]+)(?:\s+(?:on|in|at)\s+({TARGET_DEVICES}))?(?:\s+for me|\s+please)?",
+        re.IGNORECASE
+    )
+    RE_OPEN_APP = re.compile(
+        rf"(?:can you |could you |please )?(?:open|launch|start)\s+(?:up\s+)?([a-zA-Z0-9\s]+?)(?:\s+(?:on|in|at)\s+({TARGET_DEVICES}))?(?:\s+for me|\s+please)?$",
+        re.IGNORECASE
+    )
+    RE_CLOSE_APP = re.compile(
+        rf"(?:can you |could you |please )?(?:close|quit|exit|kill)\s+([a-zA-Z0-9\s]+?)(?:\s+(?:on|in|at)\s+({TARGET_DEVICES}))?(?:\s+for me|\s+please)?$",
+        re.IGNORECASE
+    )
+
+    RE_RUNNING_APPS = re.compile(
+        rf"(?:what|which|list)\s+(?:apps|applications|programs)?\s*(?:are\s+)?(?:running|open)\s*(?:on\s+({TARGET_DEVICES}))?",
+        re.IGNORECASE
+    )
+    RE_CAPABILITIES = re.compile(
+        rf"(?:what\s+can|capabilities\s+of|features\s+of)\s+({TARGET_DEVICES})",
+        re.IGNORECASE
+    )
+
+    APP_MAP = {
+        "safari": "Safari",
+        "chrome": "Google Chrome",
+        "google chrome": "Google Chrome",
+        "chromium": "Chromium",
+        "firefox": "Firefox",
+        "terminal": "Terminal",
+        "iterm": "iTerm",
+        "iterm2": "iTerm",
+        "alacritty": "Alacritty",
+        "kitty": "Kitty",
+        "vs code": "Visual Studio Code",
+        "vscode": "Visual Studio Code",
+        "code": "Visual Studio Code",
+        "calculator": "Calculator",
+        "calc": "Calculator",
+        "notes": "Notes",
+        "finder": "Finder",
+        "spotify": "Spotify",
+        "slack": "Slack",
+        "discord": "Discord",
+        "steam": "Steam",
+    }
+
+    @classmethod
+    def resolve_device(cls, target: Optional[str]) -> str:
+        """Resolve a device descriptor string to canonical 'error_boy' or 'paperball'."""
+        if not target:
+            return "paperball"
+        t = target.lower().strip()
+        if any(k in t for k in ("error", "arch", "linux", "secondary", "victus", "pc")):
+            return "error_boy"
+        return "paperball"
 
     def route(self, text: str) -> RoutedAction:
         clean_text = text.lower().strip()
@@ -53,15 +110,35 @@ class DeterministicIntentRouter:
         # 2. Status / Health queries
         status_match = self.RE_STATUS.search(clean_text)
         if status_match:
-            device = "error_boy" if "error" in status_match.group(1) else "paperball"
+            device = self.resolve_device(status_match.group(1))
             return RoutedAction(
                 action_type="tool_call",
                 tool_name="get_system_status",
                 tool_args={"device": device}
             )
 
+        # 2b. Running Applications
+        running_apps_match = self.RE_RUNNING_APPS.search(clean_text)
+        if running_apps_match:
+            device = self.resolve_device(running_apps_match.group(1))
+            return RoutedAction(
+                action_type="tool_call",
+                tool_name="get_running_apps",
+                tool_args={"device": device}
+            )
+
+        # 2c. Device Capabilities
+        capabilities_match = self.RE_CAPABILITIES.search(clean_text)
+        if capabilities_match:
+            device = self.resolve_device(capabilities_match.group(1))
+            return RoutedAction(
+                action_type="tool_call",
+                tool_name="get_device_capabilities",
+                tool_args={"device": device}
+            )
+
         if "status" in clean_text or "health" in clean_text or "running on paperball" in clean_text:
-            device = "error_boy" if "error boy" in clean_text else "paperball"
+            device = "error_boy" if any(k in clean_text for k in ("error", "arch", "linux", "secondary")) else "paperball"
             return RoutedAction(
                 action_type="tool_call",
                 tool_name="get_system_status",
@@ -73,7 +150,7 @@ class DeterministicIntentRouter:
         open_url_match = self.RE_OPEN_URL.search(clean_text)
         if open_url_match:
             target = open_url_match.group(1).lower()
-            device = "error_boy" if (open_url_match.group(2) and "error" in open_url_match.group(2)) else "paperball"
+            device = self.resolve_device(open_url_match.group(2))
 
             if target in self.KNOWN_SITES:
                 return RoutedAction(
@@ -89,11 +166,11 @@ class DeterministicIntentRouter:
                 )
 
         # 4. Open Application
-        # e.g., "open Safari", "launch Terminal", "open VS Code on Error Boy"
+        # e.g., "open Safari", "launch Terminal", "open VS Code on Error Boy", "launch Firefox on Arch"
         open_app_match = self.RE_OPEN_APP.search(clean_text)
         if open_app_match:
             app_raw = open_app_match.group(1).strip()
-            device = "error_boy" if (open_app_match.group(2) and "error" in open_app_match.group(2)) else "paperball"
+            device = self.resolve_device(open_app_match.group(2))
 
             # Check if this app name is actually a known website
             if app_raw in self.KNOWN_SITES:
@@ -103,25 +180,7 @@ class DeterministicIntentRouter:
                     tool_args={"url": self.KNOWN_SITES[app_raw], "device": device}
                 )
 
-            # Map common nicknames to official macOS app names
-            app_map = {
-                "safari": "Safari",
-                "chrome": "Google Chrome",
-                "google chrome": "Google Chrome",
-                "terminal": "Terminal",
-                "iterm": "iTerm",
-                "iterm2": "iTerm",
-                "vs code": "Visual Studio Code",
-                "vscode": "Visual Studio Code",
-                "code": "Visual Studio Code",
-                "calculator": "Calculator",
-                "notes": "Notes",
-                "finder": "Finder",
-                "spotify": "Spotify",
-                "slack": "Slack",
-                "discord": "Discord",
-            }
-            app_name = app_map.get(app_raw, app_raw.title())
+            app_name = self.APP_MAP.get(app_raw, app_raw.title())
 
             return RoutedAction(
                 action_type="tool_call",
@@ -133,16 +192,8 @@ class DeterministicIntentRouter:
         close_app_match = self.RE_CLOSE_APP.search(clean_text)
         if close_app_match:
             app_raw = close_app_match.group(1).strip()
-            device = "error_boy" if (close_app_match.group(2) and "error" in close_app_match.group(2)) else "paperball"
-            app_map = {
-                "safari": "Safari",
-                "chrome": "Google Chrome",
-                "google chrome": "Google Chrome",
-                "terminal": "Terminal",
-                "vs code": "Visual Studio Code",
-                "vscode": "Visual Studio Code",
-            }
-            app_name = app_map.get(app_raw, app_raw.title())
+            device = self.resolve_device(close_app_match.group(2))
+            app_name = self.APP_MAP.get(app_raw, app_raw.title())
             return RoutedAction(
                 action_type="tool_call",
                 tool_name="close_application",

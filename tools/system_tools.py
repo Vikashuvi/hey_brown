@@ -121,3 +121,63 @@ class SystemStatusTool(BaseTool):
             message=cmd_res.message,
             data=cmd_res.data
         )
+
+
+class GetRunningAppsTool(BaseTool):
+    """Tool to list running applications on a designated device."""
+
+    def __init__(self, devices: Dict[str, DeviceAgent]):
+        self.devices = devices
+
+    @property
+    def name(self) -> str:
+        return "get_running_apps"
+
+    @property
+    def description(self) -> str:
+        return "Safely retrieves list of running applications from target device."
+
+    def execute(self, device: str = "paperball", **kwargs) -> ToolResult:
+        target_device = self.devices.get(device.lower())
+        if not target_device:
+            return ToolResult(
+                success=False,
+                message=f"Unknown device '{device}'."
+            )
+
+        cmd_res = target_device.get_running_apps()
+        return ToolResult(
+            success=cmd_res.success,
+            message=cmd_res.message,
+            data=cmd_res.data
+        )
+
+
+class GetCapabilitiesTool(BaseTool):
+    """Tool to query typed capabilities supported by a target device."""
+
+    def __init__(self, devices: Dict[str, DeviceAgent]):
+        self.devices = devices
+
+    @property
+    def name(self) -> str:
+        return "get_device_capabilities"
+
+    @property
+    def description(self) -> str:
+        return "Retrieves the list of supported typed capabilities from target device."
+
+    def execute(self, device: str = "paperball", **kwargs) -> ToolResult:
+        target_device = self.devices.get(device.lower())
+        if not target_device:
+            return ToolResult(
+                success=False,
+                message=f"Unknown device '{device}'."
+            )
+
+        cmd_res = target_device.get_device_capabilities()
+        return ToolResult(
+            success=cmd_res.success,
+            message=cmd_res.message,
+            data=cmd_res.data
+        )

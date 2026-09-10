@@ -60,3 +60,29 @@ def test_error_boy_agent_online_mock():
         res = agent.open_application("VS Code")
         assert res.success
         assert "Opened VS Code" in res.message
+
+
+def test_device_agents_capabilities_and_running_apps():
+    # Paperball
+    pb = PaperballAgent()
+    caps = pb.get_device_capabilities()
+    assert caps.success
+    assert caps.data["device"] == "paperball"
+    assert "open_application" in caps.data["capabilities"]
+
+    # Error Boy mock capabilities
+    eb = ErrorBoyAgent(base_url="http://mock-error-boy:8000")
+    with patch("requests.get") as mock_get:
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {
+            "success": True,
+            "message": "Capabilities",
+            "data": {"device": "error_boy", "capabilities": ["get_device_status", "get_running_apps"]}
+        }
+        mock_get.return_value = mock_resp
+
+        eb_caps = eb.get_device_capabilities()
+        assert eb_caps.success
+        assert "get_running_apps" in eb_caps.data["capabilities"]
+
