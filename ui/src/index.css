@@ -1,0 +1,245 @@
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap');
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+html, body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: transparent !important;
+  font-family: 'Outfit', -apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, sans-serif;
+  color: #f5f5f7;
+  -webkit-font-smoothing: antialiased;
+}
+
+#root {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  background: transparent !important;
+  padding: 4px;
+}
+
+/* ── Native Floating Overlay Root (Completely Frameless) ─────── */
+.brown-overlay-root {
+  position: relative;
+  width: 260px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  margin: 0 auto;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  pointer-events: auto;
+}
+
+/* ── Speech Bubble Slot (Holds official feral-blob BlobSpeech) ── */
+.speech-bubble-slot {
+  width: 100%;
+  height: 56px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  z-index: 20;
+  pointer-events: none;
+}
+
+/* ── Mascot Stage ───────────────────────────────────────────── */
+.mascot-stage {
+  position: relative;
+  width: 220px;
+  margin-top: -26px; /* pulls the blob SVG up so top of head meets bubble tail tip */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  background: transparent;
+  z-index: 10;
+}
+
+.brown-mascot-wrapper {
+  position: relative;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: filter 0.3s ease, transform 0.25s ease;
+}
+
+.brown-mascot-wrapper:hover {
+  transform: scale(1.02);
+}
+
+.brown-mascot-svg {
+  width: 100%;
+  height: auto;
+  display: block;
+  overflow: visible;
+}
+
+/* ── State Variations ───────────────────────────────────────── */
+.brown-mascot--sleeping {
+  opacity: 0.85;
+}
+
+.brown-mascot--offline {
+  opacity: 0.65;
+}
+
+
+/* ── Status Container & Floating Pill ───────────────────────── */
+.status-container {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-top: -6px;
+  z-index: 10;
+}
+
+.status-pill-container {
+  max-width: 95%;
+  margin: 0 auto;
+}
+
+.status-pill-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  background: rgba(30, 24, 22, 0.88);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid rgba(245, 180, 130, 0.24);
+  border-radius: 9999px;
+  padding: 5px 13px;
+  color: #f7ebe1;
+  font-size: 0.82rem;
+  font-weight: 500;
+  box-shadow:
+    0 8px 20px rgba(0, 0, 0, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 230px;
+}
+
+.status-pill-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Expandable Structured Info Card ────────────────────────── */
+.structured-info-card {
+  width: 220px;
+  margin-top: 8px;
+  background: rgba(28, 22, 20, 0.92);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(245, 180, 130, 0.2);
+  border-radius: 16px;
+  padding: 10px 12px;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.45);
+  font-size: 0.78rem;
+  color: #dfd2c8;
+}
+
+.info-card-header {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #fedbc5;
+  margin-bottom: 6px;
+  text-transform: capitalize;
+  border-bottom: 1px solid rgba(245, 180, 130, 0.12);
+  padding-bottom: 4px;
+}
+
+.info-card-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.info-card-list li {
+  padding: 2px 4px;
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 6px;
+  font-family: monospace;
+  font-size: 0.74rem;
+}
+
+.info-card-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.info-grid-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.74rem;
+}
+
+.info-grid-key {
+  color: #b5a396;
+}
+
+.info-grid-val {
+  font-weight: 600;
+  color: #fff;
+}
+
+/* ── Micro Animation Icons ─────────────────────────────────── */
+.status-icon-pulse {
+  animation: icon-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes icon-pulse {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 0.85;
+  }
+  50% {
+    transform: scale(1.2);
+    opacity: 1;
+  }
+}
+
+.status-icon-spin {
+  animation: icon-spin 2.8s linear infinite;
+}
+
+@keyframes icon-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.status-icon-wave {
+  animation: icon-wave 0.9s ease-in-out infinite alternate;
+}
+
+@keyframes icon-wave {
+  0% {
+    transform: scale(0.95);
+  }
+  100% {
+    transform: scale(1.15);
+  }
+}

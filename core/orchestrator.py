@@ -1,6 +1,6 @@
 import time
 import threading
-from typing import Optional, List
+from typing import Optional, List, Any
 import numpy as np
 
 from core.state import StateMachine, AssistantState
@@ -32,7 +32,8 @@ class BrownOrchestrator:
         conversation_timeout: float = 8.0,
         min_speech_duration_ms: int = 250,
         min_silence_duration_ms: int = 700,
-        greeting: str = "Yeah, I'm here. What can I do for you?"
+        greeting: str = "Yeah, I'm here. What can I do for you?",
+        event_bridge: Optional[Any] = None
     ):
         self.audio_input = audio_input
         self.audio_output = audio_output
@@ -42,6 +43,7 @@ class BrownOrchestrator:
         self.tts_provider = tts_provider
         self.tool_registry = tool_registry
         self.greeting = greeting
+        self.event_bridge = event_bridge
 
         self.barge_in_enabled = True
         self.barge_in_grace_period_sec = 1.2  # Ignore mic for 1.2s of playback to prevent speaker echo
@@ -74,6 +76,12 @@ class BrownOrchestrator:
 
     def _on_state_change(self, old_state: AssistantState, new_state: AssistantState):
         print(f"[Brown] State: {old_state.value} -> {new_state.value}")
+        if self.event_bridge:
+            self.event_bridge.broadcast("state_change", {
+                "state": new_state.value,
+                "old_state": old_state.value
+            })
+
         if new_state == AssistantState.SLEEPING:
             self._speech_buffer.clear()
             self._has_speech_started = False
@@ -102,6 +110,8 @@ class BrownOrchestrator:
     def start(self):
         """Start orchestrator and audio stream."""
         self._running = True
+        if self.event_bridge:
+            self.event_bridge.start()
         self.audio_input.start()
         self.wake_provider.start()
         self._loop_thread = threading.Thread(target=self._run_loop, daemon=True)
@@ -114,6 +124,8 @@ class BrownOrchestrator:
         self.audio_output.interrupt()
         self.audio_input.stop()
         self.wake_provider.stop()
+        if self.event_bridge:
+            self.event_bridge.stop()
         if self._loop_thread and self._loop_thread.is_alive():
             self._loop_thread.join(timeout=2.0)
         print("[Brown] Orchestrator stopped.")
@@ -164,6 +176,10 @@ class BrownOrchestrator:
                     self._speech_frame_count += 1
                     self._silence_frame_count = 0
                     self._speech_buffer.append(chunk)
+
+                    if self.event_bridge:
+                        amp = float(np.max(np.abs(chunk))) if len(chunk) > 0 else 0.0
+                        self.event_bridge.broadcast("audio_active", {"active": True, "level": round(amp, 3)})
                 else:
                     if self._has_speech_started:
                         self._silence_frame_count += 1
@@ -211,6 +227,8 @@ class BrownOrchestrator:
             print("[Brown] Transcribing audio with local STT...")
             text = self.stt_provider.transcribe(audio_data, sample_rate=self.audio_input.sample_rate)
             print(f"[Brown] User said: \"{text}\"")
+            if self.event_bridge:
+                self.event_bridge.broadcast("transcript", {"text": text, "is_final": True})
 
             if not text.strip():
                 print("[Brown] Empty transcription. Returning to ACTIVE_CONVERSATION.")
@@ -225,6 +243,8 @@ class BrownOrchestrator:
 
         except Exception as e:
             print(f"[Brown] Error during transcription/action: {e}")
+            if self.event_bridge:
+                self.event_bridge.broadcast("error", {"message": str(e)})
             self._speak("Sorry, I encountered an issue processing that.", next_state=AssistantState.ACTIVE_CONVERSATION)
 
     def _process_command(self, text: str) -> str:
@@ -232,32 +252,67 @@ class BrownOrchestrator:
         routed = self.intent_router.route(text)
 
         if routed.action_type == "stop":
+            if self.event_bridge:
+                self.event_bridge.broadcast("reaction", {"mood": "neutral", "message": "Stopped."})
             return "Stopped."
 
         elif routed.action_type == "tool_call":
             tool = self.tool_registry.get(routed.tool_name)
             if not tool:
+                if self.event_bridge:
+                    self.event_bridge.broadcast("state_change", {"state": "CONFUSED"})
+                    self.event_bridge.broadcast("reaction", {"mood": "confused", "message": f"Tool {routed.tool_name} is not available."})
                 return f"Tool {routed.tool_name} is not available."
 
             args = routed.tool_args or {}
             print(f"[Brown] Executing typed tool: {routed.tool_name}({args})")
+            if self.event_bridge:
+                self.event_bridge.broadcast("state_change", {
+                    "state": "EXECUTING",
+                    "description": f"Executing {routed.tool_name}",
+                    "tool": routed.tool_name
+                })
+
             result = tool.execute(**args)
+            if self.event_bridge:
+                self.event_bridge.broadcast("tool_result", {
+                    "tool": routed.tool_name,
+                    "success": result.success,
+                    "message": result.message,
+                    "data": result.data if hasattr(result, "data") else None
+                })
+                self.event_bridge.broadcast("state_change", {
+                    "state": "HAPPY" if result.success else "CONCERNED"
+                })
+                self.event_bridge.broadcast("reaction", {
+                    "mood": "happy" if result.success else "concerned",
+                    "message": result.message
+                })
             return result.message
 
+
         elif routed.action_type == "conversation":
+            if self.event_bridge:
+                self.event_bridge.broadcast("reaction", {"mood": "happy", "message": routed.direct_response})
             return routed.direct_response or "Understood."
 
+        if self.event_bridge:
+            self.event_bridge.broadcast("reaction", {"mood": "confused", "message": "I heard you, but I'm not sure how to handle that yet."})
         return "I heard you, but I'm not sure how to handle that yet."
 
     def _speak(self, text: str, next_state: AssistantState = AssistantState.ACTIVE_CONVERSATION):
         """Synthesize text and play through interruptible audio player."""
         self.state_machine.transition_to(AssistantState.SPEAKING, reason="speaking_response")
         print(f"[Brown] Speaking: \"{text}\"")
+        if self.event_bridge:
+            self.event_bridge.broadcast("tts_speaking", {"text": text, "speaking": True})
 
         try:
             audio_samples, sample_rate = self.tts_provider.synthesize(text)
 
             def _on_playback_complete():
+                if self.event_bridge:
+                    self.event_bridge.broadcast("tts_speaking", {"speaking": False})
                 if self.state_machine.current_state == AssistantState.SPEAKING:
                     self.state_machine.transition_to(next_state, reason="playback_finished")
 
@@ -265,4 +320,6 @@ class BrownOrchestrator:
 
         except Exception as e:
             print(f"[Brown] TTS synthesis error: {e}")
+            if self.event_bridge:
+                self.event_bridge.broadcast("tts_speaking", {"speaking": False, "error": str(e)})
             self.state_machine.transition_to(next_state, reason="tts_error")

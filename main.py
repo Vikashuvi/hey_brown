@@ -6,6 +6,7 @@ import numpy as np
 from typing import Dict, Any
 
 from core.orchestrator import BrownOrchestrator
+from core.events import UIEventBridge
 from tools.base import ToolRegistry
 from tools.system_tools import OpenAppTool, CloseAppTool, OpenUrlTool, SystemStatusTool, GetRunningAppsTool, GetCapabilitiesTool
 from devices.paperball import PaperballAgent
@@ -98,6 +99,11 @@ def build_orchestrator(config: Dict[str, Any]) -> BrownOrchestrator:
 
     # 5. Orchestrator
     conv_cfg = config.get("conversation", {})
+    ui_cfg = config.get("ui", {})
+    event_bridge = UIEventBridge(
+        host=ui_cfg.get("host", "127.0.0.1"),
+        port=ui_cfg.get("port", 8766)
+    )
     orchestrator = BrownOrchestrator(
         audio_input=audio_in,
         audio_output=audio_out,
@@ -109,7 +115,8 @@ def build_orchestrator(config: Dict[str, Any]) -> BrownOrchestrator:
         conversation_timeout=conv_cfg.get("timeout_seconds", 8.0),
         min_speech_duration_ms=vad_cfg.get("min_speech_duration_ms", 250),
         min_silence_duration_ms=vad_cfg.get("min_silence_duration_ms", 700),
-        greeting=conv_cfg.get("greeting", "Yeah, I'm here. What can I do for you?")
+        greeting=conv_cfg.get("greeting", "Yeah, I'm here. What can I do for you?"),
+        event_bridge=event_bridge
     )
     orchestrator.barge_in_enabled = conv_cfg.get("barge_in_enabled", True)
     orchestrator.barge_in_grace_period_sec = conv_cfg.get("barge_in_grace_period_sec", 1.2)

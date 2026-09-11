@@ -6,6 +6,10 @@ ENV/
 *.egg-info/
 dist/
 build/
+**/dist/
+**/build/
+**/node_modules/
+*.tsbuildinfo
 
 # Byte-compiled / cache
 __pycache__/

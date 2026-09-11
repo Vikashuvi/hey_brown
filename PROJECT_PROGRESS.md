@@ -12,9 +12,11 @@
    - [Milestone 3 — Interactive Testing & Voice Preview Utilities](#milestone-3--interactive-testing--voice-preview-utilities)
    - [Milestone 4 — Robust Barge-In & Acoustic Echo Protection](#milestone-4--robust-barge-in--acoustic-echo-protection)
    - [Milestone 5 — Configurable Wake Phrases & Natural Intent Routing](#milestone-5--configurable-wake-phrases--natural-intent-routing)
-   - [Milestone 6 — Error Boy (Arch Linux) Remote Operation [CURRENT]](#milestone-6--error-boy-arch-linux-remote-operation-current)
+   - [Milestone 6 — Error Boy (Arch Linux) Remote Operation](#milestone-6--error-boy-arch-linux-remote-operation)
+   - [Milestone 7 — Living Desktop Mascot UI (feral-blob) [CURRENT]](#milestone-7--living-desktop-mascot-ui-feral-blob-current)
 3. [Test Suite Status](#test-suite-status)
 4. [Upcoming Roadmap](#upcoming-roadmap)
+
 
 ---
 
@@ -132,6 +134,35 @@ Brown operates as a dual-machine, multimodal voice assistant distributed across 
 
 ---
 
+### Milestone 7 — Native macOS Menu-Bar Presence & Transparent Floating Overlay [CURRENT]
+* **Goal**: Deliver a native macOS AI presence for Brown where the assistant lives in the macOS menu bar during idle and smoothly transitions to a transparent, borderless floating overlay near the top-right of the screen upon wake word detection.
+* **Visual Identity & Feral-Blob Library Integration**:
+  * **Signature `#D9829D` Berry / Rose-Quartz Jelly Palette**: Tailored CSS tokens (`--jelly-body-mid: #d9829d`, luminous top `--jelly-body-top: #fce2ec`, deep base `--jelly-body-deep: #99405d`, cheek glow `--jelly-cheek: #ff9ec0`).
+  * **Official `BlobSpeech` Cloud Dialog Box**: Mounted directly above the mascot with the downward directional tail pointing to the jelly's crown, displaying live speech, transcripts, and qualitative states with animated SVG morphing.
+  * **Roving Gaze & Micro-Stuttering**: Emotive saccade cycle during `THINKING` (looking down, micro-stutter adjust, thoughtful glance up, imperative double-blink) and attentive upward tilt during `LISTENING`.
+  * **Offline Auto-Dismiss**: When disconnected from core, the overlay automatically hides after 12 seconds so it never remains stuck on the desktop.
+* **Key Architecture & Design Decisions**:
+  * **No Application Window / No Dock Icon**: Packaged as a native macOS accessory agent (`LSUIElement = true`) using Swift + Cocoa + WebKit. Enforces a single-instance guard to prevent duplicate icons.
+  * **Custom Scheme Handler (`brown://app/`)**: Implemented `WKURLSchemeHandler` in Swift to eliminate WebKit `file://` CORS restrictions, ensuring ES6 modules and WebSockets load reliably.
+  * **Direct Core Sync**: Dual-channel synchronization via native Swift WebSocket client on `ws://127.0.0.1:8766` and WebKit message handler.
+  * **Zero-Chrome Transparent Overlay**: Floating `NSPanel` (`styleMask = [.borderless, .nonactivatingPanel]`, `level = .statusBar`).
+
+* **Deliverables**:
+  1. **Native Swift Shell** (`macos/BrownNative/main.swift`):
+     * Native `NSStatusItem` in the system menu bar with vector jelly icon.
+     * Non-activating transparent `NSPanel` with auto-repositioning for multi-display setups.
+     * Bi-directional script message bridge between WebKit and Swift.
+  2. **React + feral-blob Bundle** (`ui/`):
+     * Frameless overlay stage with warm amber/chestnut palette.
+     * TypeScript build configured with `base: './'` for local disk loading via `file://`.
+  3. **Build & Bundler Script** (`scripts/build_macos_app.sh`):
+     * Compiles native binary with `swiftc -O` and packages into standalone `Brown.app`.
+  4. **macOS Login Auto-Start** (`scripts/com.brown.ui.plist` & `scripts/install_launch_agent.sh`):
+     * Directly launches native `Brown.app` binary upon macOS user login.
+
+
+---
+
 ## 🧪 Test Suite Status
 
 All unit and integration tests pass cleanly:
@@ -143,12 +174,14 @@ All unit and integration tests pass cleanly:
 | `tests/test_brown_wake.py` | Multi-phrase wake detection & phonetic matching | ✅ PASS |
 | `tests/test_device_agents.py` | Paperball macOS & Error Boy capabilities + running apps | ✅ PASS |
 | `tests/test_error_boy_server.py` | Error Boy Arch daemon lifecycle, auth & typed endpoints | ✅ PASS |
+| `tests/test_event_bridge.py` | Thread-safe WebSocket UIEventBridge server & broadcast | ✅ PASS |
 | `tests/test_intent_router.py` | Regex intent parsing & multi-device routing | ✅ PASS |
 | `tests/test_live_models.py` | Silero VAD & Faster-Whisper model loading | ✅ PASS |
 | `tests/test_orchestrator.py` | Full orchestrator lifecycle & state transitions | ✅ PASS |
 | `tests/test_state_machine.py` | Valid/invalid state machine transitions | ✅ PASS |
 
-**Current Score:** **25 / 25 Tests Passing** (100%)
+**Current Score:** **26 / 26 Tests Passing** (100%)
+
 
 ---
 
