@@ -20,7 +20,8 @@ __pycache__/
 # Audio outputs / recordings
 *.wav
 *.mp3
-*.ogg
+*.log
+backend.log
 *.flac
 tests/test_output_*.wav
 

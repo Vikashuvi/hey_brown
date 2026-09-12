@@ -69,6 +69,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler, WKNa
     var wsTask: URLSessionWebSocketTask?
     var offlineTimer: Timer?
 
+    // Separate dedicated Control Panel window
+    var settingsWindow: NSWindow?
+    var settingsWebView: WKWebView?
+
+
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Enforce single instance: prevent two menu bar icons
         let bundleID = Bundle.main.bundleIdentifier ?? "com.brown.desktop"
@@ -101,6 +107,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler, WKNa
         wakeItem.target = self
         menu.addItem(wakeItem)
 
+        let settingsItem = NSMenuItem(title: "Control Panel...", action: #selector(openControlPanel), keyEquivalent: ",")
+        settingsItem.target = self
+        menu.addItem(settingsItem)
+
         let reloadItem = NSMenuItem(title: "Reload Overlay", action: #selector(reloadOverlay), keyEquivalent: "r")
         reloadItem.target = self
         menu.addItem(reloadItem)
@@ -124,20 +134,21 @@ class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler, WKNa
             if state == "OFFLINE" {
                 NSColor.systemGray.setFill()
             } else if state == "LISTENING" || state == "WAKE_DETECTED" || state == "SPEAKING" {
-                // Luminous top violet glow
-                NSColor(calibratedRed: 0.95, green: 0.79, blue: 1.0, alpha: 1.0).setFill()
+                // Luminous electric violet glow (#9456fa)
+                NSColor(calibratedRed: 0.58, green: 0.35, blue: 0.98, alpha: 1.0).setFill()
             } else {
-                // Built-in default violet jelly (#cb84f5)
-                NSColor(calibratedRed: 0.80, green: 0.52, blue: 0.96, alpha: 1.0).setFill()
+                // Electric violet (#7c3aed)
+                NSColor(calibratedRed: 0.49, green: 0.23, blue: 0.93, alpha: 1.0).setFill()
             }
             path.fill()
 
-            // Draw two tiny expressive eyes
-            let eyeColor = (state == "OFFLINE") ? NSColor.darkGray : NSColor(calibratedRed: 0.09, green: 0.05, blue: 0.15, alpha: 0.95)
+            // Draw midnight obsidian capsule eyes (#0f0926)
+            let eyeColor = (state == "OFFLINE") ? NSColor.darkGray : NSColor(calibratedRed: 0.06, green: 0.04, blue: 0.15, alpha: 0.95)
             eyeColor.setFill()
 
-            let leftEye = NSBezierPath(ovalIn: NSRect(x: 5.5, y: 7.5, width: 2.2, height: 2.2))
-            let rightEye = NSBezierPath(ovalIn: NSRect(x: 10.3, y: 7.5, width: 2.2, height: 2.2))
+            // Vertical capsule pill eyes
+            let leftEye = NSBezierPath(roundedRect: NSRect(x: 5.6, y: 6.0, width: 2.0, height: 4.8), xRadius: 1.0, yRadius: 1.0)
+            let rightEye = NSBezierPath(roundedRect: NSRect(x: 10.4, y: 6.0, width: 2.0, height: 4.8), xRadius: 1.0, yRadius: 1.0)
             leftEye.fill()
             rightEye.fill()
 
@@ -151,8 +162,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler, WKNa
 
     // ── 2. Floating Transparent Overlay Setup ────────────────────────────
     private func setupOverlayPanel() {
-        let width: CGFloat = 280
-        let height: CGFloat = 380
+        let width: CGFloat = 210
+        let height: CGFloat = 280
 
         let initialRect = NSRect(x: 0, y: 0, width: width, height: height)
 
@@ -192,6 +203,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler, WKNa
         if #available(macOS 12.0, *) {
             webView.underPageBackgroundColor = .clear
         }
+        webView.wantsLayer = true
+        webView.layer?.backgroundColor = NSColor.clear.cgColor
+        webView.layer?.borderWidth = 0
+        webView.layer?.borderColor = NSColor.clear.cgColor
+        webView.layer?.shadowColor = NSColor.clear.cgColor
         webView.autoresizingMask = [.width, .height]
 
         overlayPanel.contentView = webView
@@ -205,6 +221,54 @@ class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler, WKNa
         let execPath = Bundle.main.bundlePath
         let projectRoot = URL(fileURLWithPath: execPath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         return projectRoot.appendingPathComponent("ui/dist")
+    }
+
+    // ── Dedicated macOS Control Panel Window Setup ───────────────────────
+    private func setupSettingsWindow() {
+        let width: CGFloat = 540
+        let height: CGFloat = 680
+        let rect = NSRect(x: 0, y: 0, width: width, height: height)
+
+        let window = NSWindow(
+            contentRect: rect,
+            styleMask: [.titled, .closable, .miniaturizable, .fullSizeContentView],
+            backing: .buffered,
+            defer: false
+        )
+
+        window.title = "Brown — Control Panel"
+        window.titlebarAppearsTransparent = true
+        window.titleVisibility = .hidden
+        window.appearance = NSAppearance(named: .darkAqua)
+        window.backgroundColor = NSColor(calibratedWhite: 0.0, alpha: 1.0)
+        window.isMovableByWindowBackground = true
+        window.center()
+        window.isReleasedWhenClosed = false
+        window.level = .floating
+
+        let config = WKWebViewConfiguration()
+        let distDir = resolveDistDirectory()
+        let schemeHandler = LocalSchemeHandler(baseDirectory: distDir)
+        config.setURLSchemeHandler(schemeHandler, forURLScheme: "brown")
+
+        let userContent = WKUserContentController()
+        userContent.add(self, name: "brownNative")
+        config.userContentController = userContent
+
+        let sWebView = WKWebView(frame: rect, configuration: config)
+        sWebView.setValue(false, forKey: "drawsBackground")
+        if #available(macOS 12.0, *) {
+            sWebView.underPageBackgroundColor = .black
+        }
+        sWebView.autoresizingMask = [.width, .height]
+
+        if let settingsUrl = URL(string: "brown://app/index.html?view=settings") {
+            sWebView.load(URLRequest(url: settingsUrl))
+        }
+
+        window.contentView = sWebView
+        self.settingsWindow = window
+        self.settingsWebView = sWebView
     }
 
     // ── 3. Content Loading ────────────────────────────────────────────────
@@ -285,13 +349,30 @@ class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler, WKNa
     // ── 6. Script Message Handler (from React / feral-blob) ──────────────
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
         guard message.name == "brownNative",
-              let body = message.body as? [String: Any],
-              let state = body["state"] as? String else {
+              let body = message.body as? [String: Any] else {
             return
         }
 
         DispatchQueue.main.async { [weak self] in
-            self?.handleStateTransition(state: state, payload: body)
+            guard let self = self else { return }
+
+            // Handle action requests (e.g. open/close settings window, close mascot)
+            if let action = body["action"] as? String {
+                if action == "open_settings_window" || action == "open_settings" {
+                    self.openControlPanel()
+                    return
+                } else if action == "close_settings_window" {
+                    self.settingsWindow?.orderOut(nil)
+                    return
+                } else if action == "close" {
+                    self.handleStateTransition(state: "SLEEPING", payload: body)
+                    return
+                }
+            }
+
+            if let state = body["state"] as? String {
+                self.handleStateTransition(state: state, payload: body)
+            }
         }
     }
 
@@ -336,7 +417,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler, WKNa
                 overlayPanel.animator().alphaValue = 1.0
             })
         }
-
     }
 
     // ── 7. Menu Actions ──────────────────────────────────────────────────
@@ -345,14 +425,26 @@ class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler, WKNa
         handleStateTransition(state: "WAKE_DETECTED", payload: [:])
     }
 
+    @objc func openControlPanel() {
+        if settingsWindow == nil {
+            setupSettingsWindow()
+        }
+        NSApp.activate(ignoringOtherApps: true)
+        settingsWindow?.makeKeyAndOrderFront(nil)
+    }
+
     @objc func reloadOverlay() {
         loadWebContent()
+        if let sWebView = settingsWebView, let settingsUrl = URL(string: "brown://app/index.html?view=settings") {
+            sWebView.load(URLRequest(url: settingsUrl))
+        }
     }
 
     @objc func quitApp() {
         NSApplication.shared.terminate(nil)
     }
 }
+
 
 // ── Main Entrypoint ──────────────────────────────────────────────────────
 let app = NSApplication.shared

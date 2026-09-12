@@ -117,22 +117,44 @@ class UIEventBridge:
             self.clients.add(websocket)
 
         # Send initial welcome & handshake
+        from core.settings import load_settings, save_settings
+
+        # Send initial welcome & handshake with active settings
         handshake = json.dumps({
             "event": "connected",
-            "data": {"message": "Connected to Brown UI Event Bridge", "port": self.port},
+            "data": {
+                "message": "Connected to Brown UI Event Bridge",
+                "port": self.port,
+                "settings": load_settings()
+            },
             "timestamp": time.time()
         })
         try:
             await websocket.send(handshake)
-            # Keep alive loop listening for ping/pong or UI poke messages
+            # Keep alive loop listening for ping/pong, settings, and action requests
             async for raw in websocket:
                 try:
                     data = json.loads(raw)
-                    # Support UI poking or wake requests if sent from UI
-                    if data.get("action") == "ping":
+                    action = data.get("action")
+                    if action == "ping":
                         await websocket.send(json.dumps({"event": "pong", "timestamp": time.time()}))
-                except Exception:
-                    pass
+                    elif action == "get_settings":
+                        await websocket.send(json.dumps({
+                            "event": "settings_loaded",
+                            "data": load_settings(),
+                            "timestamp": time.time()
+                        }))
+                    elif action == "save_settings":
+                        new_settings = data.get("settings", {})
+                        if isinstance(new_settings, dict):
+                            save_settings(new_settings)
+                            self.broadcast("settings_updated", load_settings())
+                    elif action == "close":
+                        self.broadcast("state_change", {"state": "SLEEPING"})
+                    elif action == "wake":
+                        self.broadcast("state_change", {"state": "WAKE_DETECTED"})
+                except Exception as e:
+                    print(f"[UIEventBridge] Error processing message: {e}")
         except Exception:
             pass
         finally:

@@ -84,31 +84,52 @@ class InterruptibleAudioPlayer(AudioOutput):
                 else:
                     channels = 1
 
-                # Blocksize 1024 provides ~42ms audio blocks for near-instant abort
-                chunk_size = 1024
+                chunk_size = 2048
                 total_frames = len(data)
 
-                with sd.OutputStream(
-                    samplerate=target_sr,
-                    channels=channels,
-                    dtype="float32",
-                    device=self._device,
-                    blocksize=chunk_size
-                ) as stream:
-                    with self._lock:
-                        self._current_stream = stream
+                # Attempt low-latency interruptible stream playback with native device blocksize
+                stream_success = False
+                try:
+                    with sd.OutputStream(
+                        samplerate=target_sr,
+                        channels=channels,
+                        dtype="float32",
+                        device=self._device,
+                        blocksize=0
+                    ) as stream:
+                        with self._lock:
+                            self._current_stream = stream
 
-                    idx = 0
-                    while idx < total_frames and not self._interrupted.is_set():
-                        chunk = data[idx : idx + chunk_size]
-                        stream.write(chunk)
-                        idx += len(chunk)
+                        idx = 0
+                        while idx < total_frames and not self._interrupted.is_set():
+                            chunk = data[idx : idx + chunk_size]
+                            stream.write(chunk)
+                            idx += len(chunk)
 
-                    if self._interrupted.is_set():
-                        try:
-                            stream.abort()
-                        except Exception:
-                            pass
+                        if self._interrupted.is_set():
+                            try:
+                                stream.abort()
+                            except Exception:
+                                pass
+
+                    stream_success = True
+                except Exception as stream_err:
+                    # Fallback to high-level sd.play for bulletproof audio output across all OS/AUHAL configurations
+                    try:
+                        sd.play(data, target_sr, device=self._device)
+                        duration = total_frames / max(target_sr, 1)
+                        start_t = time.time()
+                        while (time.time() - start_t) < duration and not self._interrupted.is_set():
+                            time.sleep(0.04)
+
+                        if self._interrupted.is_set():
+                            try:
+                                sd.stop()
+                            except Exception:
+                                pass
+                        stream_success = True
+                    except Exception as fallback_err:
+                        print(f"[InterruptibleAudioPlayer] Playback error: {fallback_err}")
 
                 with self._lock:
                     self._current_stream = None
@@ -123,6 +144,7 @@ class InterruptibleAudioPlayer(AudioOutput):
                     self._current_stream = None
                     self._is_playing = False
                 print(f"[InterruptibleAudioPlayer] Playback error: {e}")
+
 
         self._play_thread = threading.Thread(target=_worker, daemon=True)
         self._play_thread.start()

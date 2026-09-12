@@ -1,10 +1,14 @@
-import React, { useMemo } from 'react'
+import React, { useMemo, useEffect } from 'react'
 import { useBrownState } from './hooks/useBrownState.ts'
 import { BrownMascot } from './components/BrownMascot.tsx'
-import { BlobSpeech, type JellyBlobMood } from 'feral-blob'
+import { SpeechBubble } from './components/SpeechBubble.tsx'
 import { StatusPill } from './components/StatusPill.tsx'
+import { OverlayControls } from './components/OverlayControls.tsx'
+import { ControlPanel } from './components/ControlPanel/ControlPanel.tsx'
+import { SettingsWindowPage } from './components/ControlPanel/SettingsWindowPage.tsx'
+import { SettingsProvider, useSettings } from './context/SettingsContext.tsx'
 
-export const App: React.FC = () => {
+const BrownOverlayContent: React.FC = () => {
   const {
     state,
     transcript,
@@ -14,77 +18,100 @@ export const App: React.FC = () => {
     celebrateCount,
     isConnected,
     handlePoke,
-    handleWake
+    handleWake,
+    handleSleep
   } = useBrownState('ws://127.0.0.1:8766')
 
-  // Map Brown state machine to feral-blob mood
-  const mood: JellyBlobMood = useMemo(() => {
-    switch (state) {
-      case 'SLEEPING':
-        return 'sleepy'
-      case 'WAKE_DETECTED':
-        return 'curious'
-      case 'LISTENING':
-        return 'neutral'
-      case 'THINKING':
-        return 'hmm'
-      case 'EXECUTING':
-        return 'neutral'
-      case 'VERIFYING':
-        return 'hmm'
-      case 'SPEAKING':
-        return 'neutral'
-      case 'HAPPY':
-        return 'happy'
-      case 'CONFUSED':
-        return 'sideEye'
-      case 'CONCERNED':
-        return 'sad'
-      case 'ERROR':
-        return 'angry'
-      case 'OFFLINE':
-        return 'sleepy'
-      case 'IDLE':
-      default:
-        return 'neutral'
-    }
-  }, [state])
+  const { settings, isSettingsOpen, setIsSettingsOpen } = useSettings()
 
-  // Speech bubble text - strictly formatted for the official BlobSpeech cloud
-  const speechText = useMemo(() => {
-    const formatClean = (text: string, maxLen: number = 32) => {
-      const clean = text.replace(/^"|"$/g, '').trim()
-      if (clean.length <= maxLen) return clean
-      const sub = clean.slice(0, maxLen)
+  const handleOpenSettings = () => {
+    try {
+      if ((window as any).webkit?.messageHandlers?.brownNative) {
+        (window as any).webkit.messageHandlers.brownNative.postMessage({
+          action: 'open_settings_window'
+        })
+        return
+      }
+      // Windows & Linux native pywebview support
+      if ((window as any).pywebview?.api?.open_settings_window) {
+        (window as any).pywebview.api.open_settings_window()
+        return
+      }
+    } catch {
+      // Ignored outside native wrappers
+    }
+
+    // In browser: open a separate dedicated popup window
+    const popup = window.open('/?view=settings', 'BrownControlPanel', 'width=540,height=680,resizable=yes')
+    if (!popup || popup.closed) {
+      // Fallback to overlay modal if popup blocker intervened
+      setIsSettingsOpen(true)
+    }
+  }
+
+
+  // Listen for brown-open-settings custom event from macOS status menu or shortcut
+  useEffect(() => {
+    const handleOpenSettingsEvent = () => handleOpenSettings()
+    window.addEventListener('brown-open-settings', handleOpenSettingsEvent)
+    return () => window.removeEventListener('brown-open-settings', handleOpenSettingsEvent)
+  }, [])
+
+  const speechText = useMemo<string | null>(() => {
+    if (settings.dialogueMode === 'never') return null
+
+    if (state === 'ERROR') {
+      return statusMessage ? statusMessage.slice(0, 48) : 'An error occurred'
+    }
+
+    if (state === 'SPEAKING' && statusMessage && statusMessage.trim()) {
+      const clean = statusMessage.replace(/^"|"$/g, '').trim()
+      if (clean.length <= 46) return clean
+      const sub = clean.slice(0, 46)
       const lastSpace = sub.lastIndexOf(' ')
-      return (lastSpace > 14 ? sub.slice(0, lastSpace) : sub) + '…'
+      return (lastSpace > 24 ? sub.slice(0, lastSpace) : sub) + '…'
     }
 
-    if (transcript) return formatClean(transcript)
-    if (statusMessage) return formatClean(statusMessage)
-    if (state === 'HAPPY') return "That's the good stuff."
-    if (state === 'WAKE_DETECTED') return "Yeah, I'm here."
-    if (state === 'LISTENING') return "I'm listening..."
-    if (state === 'THINKING') return "Thinking..."
-    if (state === 'EXECUTING') return "Executing..."
-    if (state === 'SPEAKING') return "Speaking..."
+    if (settings.dialogueMode === 'always') {
+      if (transcript) return transcript
+      if (statusMessage) return statusMessage
+    }
+
     return null
-  }, [transcript, statusMessage, state])
+  }, [statusMessage, state, transcript, settings.dialogueMode])
+
+  // Detect if running in pure browser vs native WKWebView
+  const isBrowserMode = typeof window !== 'undefined' && !(window as any).webkit?.messageHandlers?.brownNative
 
   return (
     <div className="brown-overlay-root">
-      {/* Official feral-blob speech cloud directly above mascot */}
-      <div className="speech-bubble-slot">
-        {speechText && (
-          <BlobSpeech
-            mood={mood}
-            messages={{ [mood]: speechText }}
-          />
-        )}
-      </div>
+      {/* Prominent Geist toolbar in browser mode */}
+      {isBrowserMode && (
+        <div className="geist-browser-toolbar">
+          <button
+            type="button"
+            className="geist-browser-btn"
+            onClick={handleOpenSettings}
+            title="Open Control Panel in Separate Window (⌘,)"
+          >
+            <span className="geist-btn-dot" />
+            <span style={{ fontWeight: 600 }}>{settings.assistantName}</span>
+            <span className="geist-sep">/</span>
+            <span>Control Panel</span>
+            <kbd className="geist-kbd">⌘,</kbd>
+          </button>
+        </div>
+      )}
 
-      {/* Living blob character with exact library geometry and placement */}
-      <div className="mascot-stage">
+      {/* Strobi Procedural 3D Avatar Stage */}
+      <div className="strobi-stage">
+        {/* Hover Micro Controls (Close & Settings) */}
+        <OverlayControls
+          onClose={handleSleep}
+          onOpenSettings={handleOpenSettings}
+        />
+
+        <SpeechBubble text={speechText} />
         <BrownMascot
           state={state}
           blinkCount={blinkCount}
@@ -93,6 +120,9 @@ export const App: React.FC = () => {
           onWake={handleWake}
         />
       </div>
+
+      {/* Modal fallback for browser if popup blocked */}
+      {isSettingsOpen && <ControlPanel />}
 
       {/* Structured details drawer if present */}
       {structuredInfo && (
@@ -107,4 +137,26 @@ export const App: React.FC = () => {
     </div>
   )
 }
+
+export const App: React.FC = () => {
+  // Check if dedicated standalone settings window route is requested
+  const isSettingsWindowRoute = typeof window !== 'undefined' && (
+    new URLSearchParams(window.location.search).get('view') === 'settings'
+  )
+
+  if (isSettingsWindowRoute) {
+    return (
+      <SettingsProvider>
+        <SettingsWindowPage />
+      </SettingsProvider>
+    )
+  }
+
+  return (
+    <SettingsProvider>
+      <BrownOverlayContent />
+    </SettingsProvider>
+  )
+}
+
 export default App

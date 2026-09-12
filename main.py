@@ -162,11 +162,16 @@ def main():
         print("Press Ctrl+C to exit.\n")
         while True:
             time.sleep(0.5)
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, SystemExit):
         print("\nStopping Brown...")
-        orchestrator.stop()
+        try:
+            orchestrator.stop()
+        except Exception:
+            pass
         print("Goodbye.")
+        sys.exit(0)
 
 
 if __name__ == "__main__":
     main()
+

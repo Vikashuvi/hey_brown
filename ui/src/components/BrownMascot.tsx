@@ -1,7 +1,14 @@
-import React, { useMemo } from 'react'
-import { JellyBlobMascot, type JellyBlobMood } from 'feral-blob'
-import 'feral-blob/blob.css'
+import React, { useMemo, useRef } from 'react'
+import {
+  Avatar,
+  type AvatarController,
+  type AnimationKey,
+  type ExpressionKey,
+  type AvatarDefinition,
+  strobiDefinition
+} from '../avatar'
 import { BrownMascotState } from '../types.ts'
+import { useSettings } from '../context/SettingsContext'
 
 interface BrownMascotProps {
   state: BrownMascotState
@@ -18,66 +25,77 @@ export const BrownMascot: React.FC<BrownMascotProps> = ({
   onPoke,
   onWake
 }) => {
-  // Map Brown state machine to feral-blob mood
-  const mood: JellyBlobMood = useMemo(() => {
+  const avatarRef = useRef<AvatarController>(null)
+  const { settings } = useSettings()
+
+  // Map Brown assistant state to Strobi procedural animation or expression
+  const { animation, expression } = useMemo<{
+    animation?: AnimationKey
+    expression?: ExpressionKey
+  }>(() => {
     switch (state) {
       case 'SLEEPING':
-        return 'sleepy'
+        return { animation: 'sleeping' }
       case 'WAKE_DETECTED':
-        return 'curious'
+        return { animation: 'waking' }
       case 'LISTENING':
-        return 'neutral'
+        return { animation: 'listening' }
       case 'THINKING':
-        return 'hmm'
+        return { animation: 'thinking' }
       case 'EXECUTING':
-        return 'neutral'
       case 'VERIFYING':
-        return 'hmm'
+        return { animation: 'working' }
       case 'SPEAKING':
-        return 'neutral'
+        return { animation: 'speaking' }
       case 'HAPPY':
-        return 'happy'
+        return { animation: 'excited' }
       case 'CONFUSED':
-        return 'sideEye'
+        return { animation: 'suspicious' }
       case 'CONCERNED':
-        return 'sad'
+        return { expression: 'downward-gaze' }
       case 'ERROR':
-        return 'angry'
+        return { animation: 'angry' }
       case 'OFFLINE':
-        return 'sleepy'
+        return { animation: 'bored' }
       case 'IDLE':
       default:
-        return 'neutral'
+        return { animation: 'idle' }
     }
   }, [state])
 
-  // Native smooth talking loop provided directly by feral-blob
-  const mouth = state === 'SPEAKING' ? 'open' : undefined
+  const handleClick = () => {
+    if (state === 'SLEEPING') {
+      onWake()
+    } else {
+      onPoke()
+      avatarRef.current?.play('excited')
+    }
+  }
 
-  // Nod during SPEAKING for lifelike cadence
-  const nod = state === 'SPEAKING'
-
-  // Sparkle in eyes during active states
-  const sparkle = state === 'LISTENING' || state === 'HAPPY'
-
-  // CSS class for simple state hooks
-  const stateClass = `brown-mascot--${state.toLowerCase()}`
+  const size = settings.mascotSize || 110
 
   return (
-    <div className={`brown-mascot-wrapper ${stateClass}`}>
-      <JellyBlobMascot
-        mood={mood}
-        mouth={mouth}
-        nod={nod}
-        sparkle={sparkle}
-        blink={blinkCount}
-        celebrate={celebrateCount}
-        onPoke={onPoke}
-        onWake={onWake}
-        eyeStyle="v1"
-        happyEyes="smile"
-        className="brown-mascot-svg"
+    <div
+      className="strobi-mascot-wrapper"
+      onClick={handleClick}
+      role="button"
+      style={{
+        width: size,
+        height: size,
+        filter: `drop-shadow(0 10px 22px ${settings.primaryColor}66) drop-shadow(0 4px 12px rgba(15, 9, 38, 0.5))`
+      }}
+      aria-label={`${settings.assistantName} assistant, state: ${state}`}
+    >
+      <Avatar
+        ref={avatarRef}
+        definition={strobiDefinition as unknown as AvatarDefinition}
+        animation={animation}
+        expression={expression}
+        size={size}
+        glossy={settings.glossyEffect}
+        ariaLabel={`${settings.assistantName} procedural 3D avatar`}
       />
     </div>
   )
 }
+export default BrownMascot

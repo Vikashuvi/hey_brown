@@ -24,6 +24,7 @@ interface UseBrownStateReturn {
   isConnected: boolean
   handlePoke: () => void
   handleWake: () => void
+  handleSleep: () => void
 }
 
 export function useBrownState(wsUrl: string = 'ws://127.0.0.1:8766'): UseBrownStateReturn {
@@ -100,6 +101,7 @@ export function useBrownState(wsUrl: string = 'ws://127.0.0.1:8766'): UseBrownSt
       try {
         const ws = new WebSocket(wsUrl)
         wsRef.current = ws
+        ;(window as any).__brownWs = ws
 
         ws.onopen = () => {
           setIsConnected(true)
@@ -120,6 +122,7 @@ export function useBrownState(wsUrl: string = 'ws://127.0.0.1:8766'): UseBrownSt
         ws.onclose = () => {
           setIsConnected(false)
           setState('OFFLINE')
+          ;(window as any).__brownWs = null
           notifyNative('OFFLINE', { connected: false })
           reconnectTimeout = setTimeout(connect, 2000)
         }
@@ -130,6 +133,7 @@ export function useBrownState(wsUrl: string = 'ws://127.0.0.1:8766'): UseBrownSt
       } catch {
         setIsConnected(false)
         setState('OFFLINE')
+        ;(window as any).__brownWs = null
         reconnectTimeout = setTimeout(connect, 2000)
       }
     }
@@ -140,6 +144,7 @@ export function useBrownState(wsUrl: string = 'ws://127.0.0.1:8766'): UseBrownSt
       active = false
       if (reconnectTimeout) clearTimeout(reconnectTimeout)
       if (wsRef.current) wsRef.current.close()
+      ;(window as any).__brownWs = null
     }
   }, [wsUrl, notifyNative])
 
@@ -288,6 +293,20 @@ export function useBrownState(wsUrl: string = 'ws://127.0.0.1:8766'): UseBrownSt
     scheduleReturnToIdle(3500)
   }, [notifyNative, scheduleReturnToIdle])
 
+  // Sleep / Close handler
+  const handleSleep = useCallback(() => {
+    setState('IDLE')
+    setTranscript(null)
+    setStatusMessage(null)
+    setStructuredInfo(null)
+    notifyNative('SLEEPING', { action: 'close' })
+    try {
+      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify({ action: 'close' }))
+      }
+    } catch {}
+  }, [notifyNative])
+
   return {
     state,
     transcript,
@@ -298,7 +317,8 @@ export function useBrownState(wsUrl: string = 'ws://127.0.0.1:8766'): UseBrownSt
     celebrateCount,
     isConnected,
     handlePoke,
-    handleWake
+    handleWake,
+    handleSleep
   }
 }
 
