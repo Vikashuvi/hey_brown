@@ -225,8 +225,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler, WKNa
 
     // ── Dedicated macOS Control Panel Window Setup ───────────────────────
     private func setupSettingsWindow() {
-        let width: CGFloat = 740
-        let height: CGFloat = 780
+        let width: CGFloat = 720
+        let height: CGFloat = 660
         let rect = NSRect(x: 0, y: 0, width: width, height: height)
 
         let window = NSWindow(
@@ -235,7 +235,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler, WKNa
             backing: .buffered,
             defer: false
         )
-        window.minSize = NSSize(width: 600, height: 550)
+        window.minSize = NSSize(width: 640, height: 500)
 
         window.title = "Brown — Control Panel"
         window.titlebarAppearsTransparent = true

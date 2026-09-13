@@ -213,15 +213,27 @@ class DeterministicIntentRouter:
         return self.device_resolver.resolve(target)
 
     def match_fast_path(self, text: str) -> Optional[RoutedAction]:
-        """Try exact deterministic match. Returns None if phrase requires semantic parsing."""
+        """Minimal deterministic fast path strictly for emergency/safety events.
+        
+        All natural language understanding, entity resolution, follow-ups,
+        and general commands pass through to the conversational brain.
+        """
         clean_text = text.lower().strip()
         clean_text = self.RE_TRAILING_PUNCT.sub("", clean_text).strip()
 
-        # 1. Stop / Interruption
+        # Emergency stop / interruption
         if clean_text in self.STOP_WORDS:
             return RoutedAction(action_type="stop", direct_response="Stopped.")
 
-        # 2. Status / Health queries
+        return None
+
+
+    def match_pattern(self, text: str) -> Optional[RoutedAction]:
+        """Deterministic pattern matching for explicit legacy command syntax."""
+        clean_text = text.lower().strip()
+        clean_text = self.RE_TRAILING_PUNCT.sub("", clean_text).strip()
+
+        # Status / Health
         status_match = self.RE_STATUS.search(clean_text)
         if status_match:
             device = self.resolve_device(status_match.group(1))
@@ -232,7 +244,7 @@ class DeterministicIntentRouter:
                 target_device=device
             )
 
-        # 2b. Running Applications
+        # Running Apps
         running_apps_match = self.RE_RUNNING_APPS.search(clean_text)
         if running_apps_match:
             device = self.resolve_device(running_apps_match.group(1))
@@ -243,7 +255,7 @@ class DeterministicIntentRouter:
                 target_device=device
             )
 
-        # 2c. Device Capabilities
+        # Device Capabilities
         capabilities_match = self.RE_CAPABILITIES.search(clean_text)
         if capabilities_match:
             device = self.resolve_device(capabilities_match.group(1))
@@ -254,7 +266,7 @@ class DeterministicIntentRouter:
                 target_device=device
             )
 
-        # 3. Open Website / URL
+        # Open Website / URL
         open_url_dev = self.RE_OPEN_URL_WITH_DEV.search(clean_text)
         open_url_match = open_url_dev or self.RE_OPEN_URL.search(clean_text)
         if open_url_match:
@@ -275,7 +287,7 @@ class DeterministicIntentRouter:
                     target_device=device
                 )
 
-        # 4. Open Application
+        # Open Application
         open_app_dev = self.RE_OPEN_APP_WITH_DEV.search(clean_text)
         open_app_match = open_app_dev or self.RE_OPEN_APP.search(clean_text)
         if open_app_match:
@@ -298,7 +310,7 @@ class DeterministicIntentRouter:
                 target_device=device
             )
 
-        # 5. Close Application
+        # Close Application
         close_app_dev = self.RE_CLOSE_APP_WITH_DEV.search(clean_text)
         close_app_match = close_app_dev or self.RE_CLOSE_APP.search(clean_text)
         if close_app_match:
@@ -312,31 +324,7 @@ class DeterministicIntentRouter:
                 target_device=device
             )
 
-        # 5b. Local AI Model Control & Status
-        warm_match = self.RE_WARM_LOCAL_AI.search(clean_text)
-        if warm_match:
-            target_match = warm_match.group(1) or warm_match.group(2)
-            device = self.resolve_device(target_match) if target_match else self.device_resolver.default_remote_device
-            return RoutedAction(
-                action_type="tool_call",
-                tool_name="manage_local_ai",
-                tool_args={"action": "warm", "device": device},
-                target_device=device
-            )
-
-        ai_status_match = self.RE_LOCAL_AI_STATUS.search(clean_text)
-        if ai_status_match:
-            target_match = ai_status_match.group(1)
-            device = self.resolve_device(target_match) if target_match else self.device_resolver.default_remote_device
-            return RoutedAction(
-                action_type="tool_call",
-                tool_name="get_local_ai_status",
-                tool_args={"device": device},
-                target_device=device
-            )
-
-
-        # 6. Basic greetings & standard conversation
+        # Basic greetings & standard conversation
         if clean_text in ("hey brown", "brown", "are you there", "brown are you there", "hello", "hi"):
             return RoutedAction(
                 action_type="conversation",
@@ -350,12 +338,15 @@ class DeterministicIntentRouter:
 
         return None
 
-
     def route(self, text: str) -> RoutedAction:
-        """Backward-compatible entrypoint: runs fast path, then semantic layer."""
+        """Backward-compatible entrypoint: runs fast path, pattern matcher, then semantic layer."""
         fast = self.match_fast_path(text)
         if fast:
             return fast
+
+        matched = self.match_pattern(text)
+        if matched:
+            return matched
 
         # Fallback to Semantic Classifier
         classifier = SemanticIntentClassifier(device_resolver=self.device_resolver)

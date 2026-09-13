@@ -72,7 +72,7 @@ export const SettingsWindowPage: React.FC = () => {
               </div>
               <Text small type="secondary" style={{ fontSize: '0.76rem', margin: 0 }}>
                 <Dot type="success" style={{ display: 'inline-flex', padding: 0 }}>
-                  Vercel Geist Design System
+                  System Online
                 </Dot>
               </Text>
             </div>

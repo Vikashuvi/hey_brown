@@ -73,8 +73,8 @@ class BrownDesktopApi:
         self.settings_window = webview.create_window(
             title="Brown — Control Panel",
             url=settings_url,
-            width=740,
-            height=780,
+            width=720,
+            height=660,
             resizable=True,
             on_top=True
         )

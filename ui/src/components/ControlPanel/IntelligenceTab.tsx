@@ -135,7 +135,7 @@ export const IntelligenceTab: React.FC = () => {
   })()
 
   return (
-    <div className="geist-tab-content" style={{ maxHeight: '420px', overflowY: 'auto', paddingRight: '4px' }}>
+    <div className="geist-tab-content">
       {/* 1. Local AI Section */}
       <div className="geist-form-group">
         <div className="geist-label-row" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -293,8 +293,15 @@ export const IntelligenceTab: React.FC = () => {
           </Text>
         </div>
 
-        {settings.privacyMode !== 'local_only' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, paddingLeft: 4 }}>
+        {settings.privacyMode === 'local_only' && (
+          <div style={{ padding: '8px 12px', background: 'rgba(234, 179, 8, 0.08)', border: '1px solid rgba(234, 179, 8, 0.25)', borderRadius: 6, display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+            <Badge type="warning" scale={0.65}>LOCAL-ONLY ACTIVE</Badge>
+            <Text small style={{ color: '#eab308', fontSize: '0.74rem', margin: 0 }}>
+              Cloud transmission paused by policy. Keys below remain securely configured and ready.
+            </Text>
+          </div>
+        )}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, paddingLeft: 4 }}>
             <div className="geist-toggle-card">
               <div className="geist-toggle-info">
                 <Text b small style={{ color: '#ededed', display: 'block' }}>Cloud Fallback</Text>
@@ -421,7 +428,6 @@ export const IntelligenceTab: React.FC = () => {
               </div>
             </div>
           </div>
-        )}
       </div>
 
 

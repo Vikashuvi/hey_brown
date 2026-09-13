@@ -11,6 +11,7 @@ from core.device_resolver import DeviceResolver
 from core.ai.local_provider import LocalAIProvider
 from core.ai.cloud_provider import CloudAIProvider
 from core.ai.router import AIRouter
+from core.ai.brain import BrownBrain
 from tools.base import ToolRegistry
 from tools.system_tools import (
     OpenAppTool,
@@ -195,7 +196,17 @@ def build_orchestrator(config: Dict[str, Any]) -> BrownOrchestrator:
         wake_models = [wake_cfg.get("model_name", "alexa")]
         wake_provider = OpenWakeWordProvider(model_names=wake_models, threshold=wake_cfg.get("threshold", 0.5))
 
-    # 7. Orchestrator
+    # 7. Conversational Brain (PydanticAI)
+    brain_settings = {**config, **user_settings}
+    brain = BrownBrain(
+        device_resolver=device_resolver,
+        tool_registry=registry,
+        devices=devices,
+        settings=brain_settings,
+        event_bridge=event_bridge,
+    )
+
+    # 8. Orchestrator
     conv_cfg = config.get("conversation", {})
     orchestrator = BrownOrchestrator(
         audio_input=audio_in,
@@ -205,6 +216,7 @@ def build_orchestrator(config: Dict[str, Any]) -> BrownOrchestrator:
         stt_provider=stt_provider,
         tts_provider=tts_provider,
         tool_registry=registry,
+        brain=brain,
         conversation_timeout=conv_cfg.get("timeout_seconds", 8.0),
         min_speech_duration_ms=vad_cfg.get("min_speech_duration_ms", 250),
         min_silence_duration_ms=vad_cfg.get("min_silence_duration_ms", 700),

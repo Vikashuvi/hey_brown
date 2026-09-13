@@ -37,6 +37,7 @@ class BrownOrchestrator:
         min_silence_duration_ms: int = 700,
         greeting: str = "Yeah, I'm here. What can I do for you?",
         event_bridge: Optional[Any] = None,
+        brain: Optional[Any] = None,
         ai_router: Optional[AIRouter] = None,
         device_resolver: Optional[DeviceResolver] = None,
         auto_warm: bool = True,
@@ -59,6 +60,7 @@ class BrownOrchestrator:
         self.barge_in_min_frames = 3          # Require sustained speech to interrupt
 
         self.device_resolver = device_resolver or DeviceResolver()
+        self.brain = brain
         self.intent_router = DeterministicIntentRouter(device_resolver=self.device_resolver)
         self.ai_router = ai_router or AIRouter(device_resolver=self.device_resolver)
 
@@ -309,8 +311,49 @@ class BrownOrchestrator:
         trace = RequestTrace()
         t_route_0 = time.time()
 
-        # 1. Level 1 Deterministic Fast Path check
+        # 1. Level 1 Deterministic Fast Path check (Emergency stop/cancel only)
         fast_action = self.intent_router.match_fast_path(text)
+        if fast_action and fast_action.action_type == "stop":
+            if self.event_bridge:
+                self.event_bridge.broadcast("reaction", {"mood": "neutral", "message": "Stopped."})
+            trace.intent_latency_ms = round((time.time() - t_route_0) * 1000, 2)
+            trace.provider_used = "deterministic"
+            trace.finish()
+            trace.log_summary()
+            return "Stopped."
+
+        # 2. Conversational Brain (PydanticAI)
+        if self.brain:
+            if self.event_bridge:
+                self.event_bridge.broadcast("state_change", {"state": "THINKING", "description": "Processing..."})
+
+            brain_resp = self.brain.process_query(text)
+            trace.intent_latency_ms = brain_resp.latency_ms
+            trace.provider_used = "pydantic_ai"
+            trace.target_device = brain_resp.target_device
+            trace.tool_name = brain_resp.tool_called
+            trace.success = brain_resp.success
+
+            if brain_resp.tool_called and self.event_bridge:
+                self.event_bridge.broadcast("tool_result", {
+                    "tool": brain_resp.tool_called,
+                    "success": brain_resp.success,
+                    "message": brain_resp.text,
+                    "data": brain_resp.tool_result
+                })
+
+            if self.event_bridge:
+                mood = "happy" if brain_resp.success else "concerned"
+                self.event_bridge.broadcast("reaction", {"mood": mood, "message": brain_resp.text})
+                self.event_bridge.broadcast("state_change", {"state": "HAPPY" if brain_resp.success else "CONCERNED"})
+
+            trace.finish()
+            trace.log_summary()
+            if self.event_bridge:
+                self.event_bridge.broadcast("trace_telemetry", trace.to_safe_dict())
+            return brain_resp.text
+
+        # 3. Legacy 3-Tier AI Router fallback
         deterministic_match = None
         if fast_action:
             deterministic_match = RoutingDecision(
@@ -324,7 +367,6 @@ class BrownOrchestrator:
                 confidence=fast_action.confidence,
             )
 
-        # 2. 3-Tier AI Router
         decision = self.ai_router.route_and_execute_intent(
             query=text,
             deterministic_match=deterministic_match
