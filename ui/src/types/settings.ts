@@ -52,10 +52,17 @@ export const COLOR_PRESETS: ColorPreset[] = [
 ]
 
 export type DialogueMode = 'necessary_only' | 'always' | 'never'
+export type PrivacyMode = 'local_only' | 'private' | 'normal'
+export type RoutingMode = 'local_first' | 'deterministic_first' | 'cloud_first'
+export type VisionRoutingMode = 'auto' | 'local_only' | 'cloud_only'
 
 export interface BrownSettings {
   assistantName: string
   wakePhrases: string[]
+  wakeThreshold: number
+  wakeCooldownSeconds: number
+  wakeCalibrationMode: boolean
+  speakerVerification: boolean
   primaryColor: string
   eyeColor: string
   mascotSize: number
@@ -64,11 +71,32 @@ export interface BrownSettings {
   speechCadenceMs: number
   dialogueMode: DialogueMode
   bargeInEnabled: boolean
+  // Intelligence settings
+  localAiEnabled: boolean
+  localAiProvider: string
+  localAiModel: string
+  localAiVisionModel: string
+  localAiUrl: string
+  localAiContextLength: number
+  localAiTemperature: number
+  localAiKeepWarm: boolean
+  cloudAiEnabled: boolean
+  cloudAiProvider: string
+  cloudAiModel: string
+  cloudAiVisionModel: string
+  cloudFallbackEnabled: boolean
+  privacyMode: PrivacyMode
+  routingMode: RoutingMode
+  visionRouting: VisionRoutingMode
 }
 
 export const DEFAULT_SETTINGS: BrownSettings = {
   assistantName: 'Brown',
   wakePhrases: ['hey brown', 'brown', 'wake up brown'],
+  wakeThreshold: 0.5,
+  wakeCooldownSeconds: 2.0,
+  wakeCalibrationMode: false,
+  speakerVerification: false,
   primaryColor: '#7c3aed',
   eyeColor: '#0f0926',
   mascotSize: 110,
@@ -76,5 +104,24 @@ export const DEFAULT_SETTINGS: BrownSettings = {
   sleepTimeoutSeconds: 8,
   speechCadenceMs: 300,
   dialogueMode: 'necessary_only',
-  bargeInEnabled: false
+  bargeInEnabled: false,
+  localAiEnabled: true,
+  localAiProvider: 'local',
+  localAiModel: 'qwen3-vl:2b',
+  localAiVisionModel: 'qwen3-vl:2b',
+  localAiUrl: 'http://error-boy.local:8765',
+
+  localAiContextLength: 4096,
+  localAiTemperature: 0.2,
+  localAiKeepWarm: true,
+  cloudAiEnabled: false,
+  cloudAiProvider: 'gemini',
+  cloudAiModel: 'gemini-2.0-flash',
+  cloudAiVisionModel: 'gemini-2.0-flash',
+  cloudFallbackEnabled: false,
+  privacyMode: 'local_only',
+  routingMode: 'local_first',
+  visionRouting: 'auto'
 }
+
+

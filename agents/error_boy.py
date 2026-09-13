@@ -99,3 +99,15 @@ class ErrorBoyAgent(DeviceAgent):
     # 6. Capabilities Discovery
     def get_device_capabilities(self) -> DeviceCommandResult:
         return self._send_command("capabilities", method="GET")
+
+    # 7. AI Service Endpoints
+    def get_ai_status(self) -> DeviceCommandResult:
+        return self._send_command("ai/status", method="GET")
+
+    def ai_chat(self, messages: list, tools: Optional[list] = None, model: str = "qwen3.5-2b") -> DeviceCommandResult:
+        payload = {"messages": messages, "tools": tools or [], "model": model}
+        return self._send_command("ai/chat", payload, method="POST")
+
+    def ai_unload(self) -> DeviceCommandResult:
+        return self._send_command("ai/unload", method="POST")
+

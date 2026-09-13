@@ -48,10 +48,83 @@ conversation:
 
 devices:
   paperball:
+    id: "paperball"
+    display_name: "Paperball"
     enabled: true
     is_local: true
+    aliases:
+      - "paperball"
+      - "mac"
+      - "macbook"
+      - "laptop"
+      - "local"
+      - "locally"
+      - "here"
+      - "this machine"
+      - "this computer"
   error_boy:
+    id: "error_boy"
+    display_name: "Error Boy"
     enabled: true
     is_local: false
     base_url: "http://error-boy.local:8765"
     timeout: 2.0
+    aliases:
+      - "error boy"
+      - "error_boy"
+      - "error"
+      - "linux laptop"
+      - "linux machine"
+      - "secondary laptop"
+      - "secondary machine"
+      - "other laptop"
+      - "other machine"
+      - "other computer"
+      - "arch linux"
+      - "arch"
+      - "victus"
+      - "pc"
+      - "forge"
+
+intelligence:
+  assistant_name: "Brown"
+  local_ai:
+    enabled: true
+    device: "error_boy"
+    provider: "local"
+    model: "qwen3-vl:2b"              # Primary Qwen3-VL 2B Multimodal model with native vision+text
+    vision_model: "qwen3-vl:2b"
+    max_image_dimension: 768         # Prevent VRAM overflow on GTX 1650 4GB
+    runtime: "ollama"                # "ollama", "vllm", or "auto"
+
+    base_url: "http://error-boy.local:8765"
+    context_length: 4096
+    max_output_tokens: 512
+    temperature: 0.2
+    keep_warm: true
+    idle_unload_minutes: 15
+  cloud_ai:
+    enabled: false
+    preferred_provider: "gemini"     # "gemini" (Gemini 2.0 Flash) or "openai" (GPT-4o-mini)
+    model: "gemini-2.0-flash"
+    vision_model: "gemini-2.0-flash"
+    fallback_provider: null
+    api_key_env: "GEMINI_API_KEY"
+    privacy_mode: "local_only"       # "local_only", "private", "normal"
+    use_for_research: false
+    use_for_complex_tasks: false
+    use_when_local_fails: false
+  routing:
+    local_first: true
+    deterministic_first: true
+    cloud_fallback: false
+    privacy_mode: "local_only"
+    vision_routing: "auto"           # "auto", "local_only", "cloud_only"
+
+
+wake_settings:
+  cooldown_sec: 2.0
+  calibration_mode: false
+  threshold: 0.5
+  speaker_verification: false
+

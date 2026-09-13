@@ -269,6 +269,11 @@ export function useBrownState(wsUrl: string = 'ws://127.0.0.1:8766'): UseBrownSt
       }
 
 
+      case 'wake_diagnostic': {
+        window.dispatchEvent(new CustomEvent('brown-wake-diagnostic', { detail: msg.data }))
+        break
+      }
+
       case 'error': {
         setState('ERROR')
         setStatusMessage(msg.data.message || 'Error occurred')

@@ -48,3 +48,6 @@ models/
 .env
 .env.local
 config/local.yaml
+
+/tmp
+

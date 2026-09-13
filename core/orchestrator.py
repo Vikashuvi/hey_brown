@@ -5,6 +5,9 @@ import numpy as np
 
 from core.state import StateMachine, AssistantState
 from core.intent import DeterministicIntentRouter, RoutedAction
+from core.device_resolver import DeviceResolver
+from core.ai.router import AIRouter, RoutingDecision
+from core.observability import RequestTrace
 from core.events import BrownEvent, EventType
 from tools.base import ToolRegistry
 from voice.audio.base import AudioInput, AudioOutput
@@ -17,7 +20,7 @@ from voice.tts.base import TTSProvider
 class BrownOrchestrator:
     """Core orchestrator for Brown.
     Coordinates audio I/O, wake word, VAD, STT, deterministic routing,
-    typed tools, TTS playback, and instant barge-in interruption.
+    three-tier AI routing, typed tools, TTS playback, and instant barge-in interruption.
     """
 
     def __init__(
@@ -33,7 +36,9 @@ class BrownOrchestrator:
         min_speech_duration_ms: int = 250,
         min_silence_duration_ms: int = 700,
         greeting: str = "Yeah, I'm here. What can I do for you?",
-        event_bridge: Optional[Any] = None
+        event_bridge: Optional[Any] = None,
+        ai_router: Optional[AIRouter] = None,
+        device_resolver: Optional[DeviceResolver] = None,
     ):
         self.audio_input = audio_input
         self.audio_output = audio_output
@@ -49,7 +54,10 @@ class BrownOrchestrator:
         self.barge_in_grace_period_sec = 1.2  # Ignore mic for 1.2s of playback to prevent speaker echo
         self.barge_in_min_frames = 3          # Require sustained speech to interrupt
 
-        self.intent_router = DeterministicIntentRouter()
+        self.device_resolver = device_resolver or DeviceResolver()
+        self.intent_router = DeterministicIntentRouter(device_resolver=self.device_resolver)
+        self.ai_router = ai_router or AIRouter(device_resolver=self.device_resolver)
+
         self.state_machine = StateMachine(
             conversation_timeout=conversation_timeout,
             on_state_change=self._on_state_change
@@ -248,37 +256,105 @@ class BrownOrchestrator:
             self._speak("Sorry, I encountered an issue processing that.", next_state=AssistantState.ACTIVE_CONVERSATION)
 
     def _process_command(self, text: str) -> str:
-        """Route and execute command."""
-        routed = self.intent_router.route(text)
+        """Route and execute command using 3-tier intelligence, tracing, and natural verification."""
+        trace = RequestTrace()
+        t_route_0 = time.time()
 
-        if routed.action_type == "stop":
+        # 1. Level 1 Deterministic Fast Path check
+        fast_action = self.intent_router.match_fast_path(text)
+        deterministic_match = None
+        if fast_action:
+            deterministic_match = RoutingDecision(
+                level=1,
+                provider_used="deterministic",
+                action_type=fast_action.action_type,
+                tool_name=fast_action.tool_name,
+                tool_args=fast_action.tool_args,
+                direct_response=fast_action.direct_response,
+                target_device=fast_action.target_device,
+                confidence=fast_action.confidence,
+            )
+
+        # 2. 3-Tier AI Router
+        decision = self.ai_router.route_and_execute_intent(
+            query=text,
+            deterministic_match=deterministic_match
+        )
+        trace.intent_latency_ms = round((time.time() - t_route_0) * 1000, 2)
+        trace.provider_used = decision.provider_used
+        trace.target_device = decision.target_device
+        trace.fallback_reason = decision.fallback_reason
+
+        # Avatar feedback for thinking state
+        if self.event_bridge:
+            if decision.level == 2:
+                self.event_bridge.broadcast("state_change", {"state": "THINKING", "description": "Analyzing..."})
+            elif decision.level == 3:
+                self.event_bridge.broadcast("state_change", {"state": "THINKING", "description": "Cloud reasoning..."})
+
+        # 3. Action execution
+        if decision.action_type == "stop":
             if self.event_bridge:
                 self.event_bridge.broadcast("reaction", {"mood": "neutral", "message": "Stopped."})
+            trace.finish()
+            trace.log_summary()
             return "Stopped."
 
-        elif routed.action_type == "tool_call":
-            tool = self.tool_registry.get(routed.tool_name)
+        elif decision.action_type == "tool_call":
+            trace.tool_name = decision.tool_name
+            tool = self.tool_registry.get(decision.tool_name)
             if not tool:
+                trace.success = False
+                trace.error_message = f"Tool {decision.tool_name} not found"
                 if self.event_bridge:
                     self.event_bridge.broadcast("state_change", {"state": "CONFUSED"})
-                    self.event_bridge.broadcast("reaction", {"mood": "confused", "message": f"Tool {routed.tool_name} is not available."})
-                return f"Tool {routed.tool_name} is not available."
+                    self.event_bridge.broadcast("reaction", {"mood": "confused", "message": f"Tool {decision.tool_name} is not available."})
+                trace.finish()
+                trace.log_summary()
+                return f"Tool {decision.tool_name} is not available."
 
-            args = routed.tool_args or {}
-            print(f"[Brown] Executing typed tool: {routed.tool_name}({args})")
+            args = decision.tool_args or {}
+            target_device = decision.target_device or args.get("device", "paperball")
+            display_name = self.device_resolver.get_display_name(target_device)
+
+            # Avatar feedback if waiting on remote device
             if self.event_bridge:
+                desc = f"Waiting for {display_name}..." if target_device != self.device_resolver.default_local_device else f"Executing {decision.tool_name}"
                 self.event_bridge.broadcast("state_change", {
                     "state": "EXECUTING",
-                    "description": f"Executing {routed.tool_name}",
-                    "tool": routed.tool_name
+                    "description": desc,
+                    "tool": decision.tool_name,
+                    "device": target_device
                 })
 
+            # Execute tool with timing
+            t_tool_0 = time.time()
             result = tool.execute(**args)
+            trace.tool_latency_ms = round((time.time() - t_tool_0) * 1000, 2)
+            trace.success = result.success
+
+            # Verification & Natural Conversational Synthesis
+            final_message = result.message
+            if result.success and decision.tool_name == "get_system_status" and result.data:
+                data = result.data
+                load = data.get("load1") or data.get("cpu_usage") or 0.0
+                ram_pct = data.get("ram_usage_pct") or data.get("memory_usage") or 0.0
+                gpu_temp = data.get("gpu_temperature") or data.get("gpu_temp")
+                temp_str = f", and GPU temperature is {gpu_temp}°C" if gpu_temp else ""
+                final_message = f"{display_name} is online and healthy. CPU load is around {load}, memory is at {ram_pct}%{temp_str}."
+
+            elif result.success and decision.tool_name == "get_running_apps" and result.data:
+                apps = result.data.get("running_apps", [])
+                if apps:
+                    final_message = f"On {display_name}, the running applications are: {', '.join(apps)}."
+                else:
+                    final_message = f"There are no major applications currently running on {display_name}."
+
             if self.event_bridge:
                 self.event_bridge.broadcast("tool_result", {
-                    "tool": routed.tool_name,
+                    "tool": decision.tool_name,
                     "success": result.success,
-                    "message": result.message,
+                    "message": final_message,
                     "data": result.data if hasattr(result, "data") else None
                 })
                 self.event_bridge.broadcast("state_change", {
@@ -286,19 +362,47 @@ class BrownOrchestrator:
                 })
                 self.event_bridge.broadcast("reaction", {
                     "mood": "happy" if result.success else "concerned",
-                    "message": result.message
+                    "message": final_message
                 })
-            return result.message
 
+            # Record turn in conversational context for follow-up continuity
+            self.ai_router.context.add_turn(
+                user_query=text,
+                response_text=final_message,
+                target_device=target_device,
+                tool_name=decision.tool_name,
+                tool_result=result.data if hasattr(result, "data") else None
+            )
 
-        elif routed.action_type == "conversation":
+            trace.finish()
+            trace.log_summary()
             if self.event_bridge:
-                self.event_bridge.broadcast("reaction", {"mood": "happy", "message": routed.direct_response})
-            return routed.direct_response or "Understood."
+                self.event_bridge.broadcast("trace_telemetry", trace.to_safe_dict())
+            return final_message
 
+        elif decision.action_type == "conversation":
+            response = decision.direct_response or "Understood."
+            if self.event_bridge:
+                self.event_bridge.broadcast("reaction", {"mood": "happy", "message": response})
+            self.ai_router.context.add_turn(
+                user_query=text,
+                response_text=response,
+                target_device=decision.target_device
+            )
+            trace.finish()
+            trace.log_summary()
+            if self.event_bridge:
+                self.event_bridge.broadcast("trace_telemetry", trace.to_safe_dict())
+            return response
+
+        # Fallback
+        msg = "I heard you, but I'm not sure how to handle that yet."
         if self.event_bridge:
-            self.event_bridge.broadcast("reaction", {"mood": "confused", "message": "I heard you, but I'm not sure how to handle that yet."})
-        return "I heard you, but I'm not sure how to handle that yet."
+            self.event_bridge.broadcast("reaction", {"mood": "confused", "message": msg})
+        trace.finish()
+        trace.log_summary()
+        return msg
+
 
     def _speak(self, text: str, next_state: AssistantState = AssistantState.ACTIVE_CONVERSATION):
         """Synthesize text and play through interruptible audio player."""

@@ -103,6 +103,28 @@ def test_error_boy_server_lifecycle_and_endpoints():
         assert not injection_res.success
         assert "Invalid or unsafe" in injection_res.message
 
+        # 10. AI Service endpoints
+        ai_status = agent.get_ai_status()
+        assert ai_status.success
+        assert ai_status.data["ready"] is True
+        assert "resources" in ai_status.data
+        assert "qwen" in ai_status.data["active_model"]
+
+
+        # AI chat completion test
+        ai_chat_res = agent.ai_chat(
+            messages=[{"role": "user", "content": "How's the computer doing?"}],
+            model="qwen3.5-2b"
+        )
+        assert ai_chat_res.success
+        assert len(ai_chat_res.data["tool_calls"]) > 0
+        assert ai_chat_res.data["tool_calls"][0]["name"] == "get_system_status"
+
+        # AI unload test
+        unload_res = agent.ai_unload()
+        assert unload_res.success
+
+
     finally:
         server.shutdown()
         server.server_close()

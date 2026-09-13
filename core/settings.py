@@ -14,6 +14,10 @@ _lock = threading.Lock()
 DEFAULT_SETTINGS: Dict[str, Any] = {
     "assistantName": "Brown",
     "wakePhrases": ["hey brown", "brown", "wake up brown"],
+    "wakeThreshold": 0.5,
+    "wakeCooldownSeconds": 2.0,
+    "wakeCalibrationMode": False,
+    "speakerVerification": False,
     "primaryColor": "#7c3aed",
     "eyeColor": "#0f0926",
     "mascotSize": 110,
@@ -21,8 +25,28 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
     "sleepTimeoutSeconds": 8,
     "speechCadenceMs": 300,
     "dialogueMode": "necessary_only",
-    "bargeInEnabled": False
+    "bargeInEnabled": False,
+    # Intelligence settings
+    "localAiEnabled": True,
+    "localAiProvider": "local",
+    "localAiModel": "qwen3-vl:2b",
+    "localAiVisionModel": "qwen3-vl:2b",
+    "localAiUrl": "http://error-boy.local:8765",
+
+    "localAiContextLength": 4096,
+    "localAiTemperature": 0.2,
+    "localAiKeepWarm": True,
+    "cloudAiEnabled": False,
+    "cloudAiProvider": "gemini",
+    "cloudAiModel": "gemini-2.0-flash",
+    "cloudAiVisionModel": "gemini-2.0-flash",
+    "cloudFallbackEnabled": False,
+    "privacyMode": "local_only",      # "local_only" | "private" | "normal"
+    "routingMode": "local_first",      # "local_first" | "deterministic_first" | "cloud_first"
+    "visionRouting": "auto",          # "auto" | "local_only" | "cloud_only"
 }
+
+
 
 
 def load_settings() -> Dict[str, Any]:
