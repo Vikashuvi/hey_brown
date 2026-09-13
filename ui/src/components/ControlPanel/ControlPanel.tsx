@@ -5,8 +5,8 @@ import { AppearanceTab } from './AppearanceTab'
 import { TimingTab } from './TimingTab'
 import { IntelligenceTab } from './IntelligenceTab'
 import { NodesTab } from './NodesTab'
-import { Card, Tabs, Button, Badge, Dot, Divider, Spacer, Text } from './geist'
-import { Sliders, X, RefreshCw, Check } from '@geist-ui/icons'
+import { Card, Button, Badge, Dot, Text } from './geist'
+import { Sliders, X, RefreshCw, Check, User, Cpu, Server, Clock } from '@geist-ui/icons'
 import './ControlPanel.css'
 
 export const ControlPanel: React.FC = () => {
@@ -26,6 +26,14 @@ export const ControlPanel: React.FC = () => {
 
   if (!isSettingsOpen) return null
 
+  const tabs = [
+    { id: 'appearance', label: 'Appearance', icon: <Sliders size={14} /> },
+    { id: 'identity', label: 'Identity', icon: <User size={14} /> },
+    { id: 'intelligence', label: 'Intelligence', icon: <Cpu size={14} /> },
+    { id: 'nodes', label: 'Nodes & Devices', icon: <Server size={14} /> },
+    { id: 'timing', label: 'Voice & Timing', icon: <Clock size={14} /> },
+  ]
+
   return (
     <div
       className="geist-control-panel-overlay"
@@ -38,33 +46,25 @@ export const ControlPanel: React.FC = () => {
         className="geist-control-panel-container"
         onClick={(e) => e.stopPropagation()}
       >
-        <Card
-          className="geist-control-card"
-          style={{
-            backgroundColor: '#000000',
-            borderColor: '#333333',
-            borderRadius: '12px',
-            boxShadow: '0 20px 40px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(255, 255, 255, 0.08)'
-          }}
-        >
+        <Card className="geist-control-card">
           {/* Header */}
           <div className="geist-card-header">
             <div className="geist-header-title-group">
               <div className="geist-header-icon">
-                <Sliders size={15} />
+                <Sliders size={16} />
               </div>
               <div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <Text b style={{ fontSize: '0.95rem', color: '#ffffff', margin: 0 }}>
-                    {settings.assistantName}
+                  <Text b style={{ fontSize: '1.05rem', color: '#ffffff', margin: 0 }}>
+                    {settings.assistantName} Assistant
                   </Text>
-                  <Badge type="secondary" scale={0.65} style={{ textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  <Badge type="secondary" scale={0.7} style={{ textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                     Control Panel
                   </Badge>
                 </div>
-                <Text small type="secondary" style={{ fontSize: '0.75rem', margin: 0 }}>
+                <Text small type="secondary" style={{ fontSize: '0.76rem', margin: 0 }}>
                   <Dot type="success" style={{ display: 'inline-flex', padding: 0 }}>
-                    Geist Design System
+                    Vercel Geist Design System
                   </Dot>
                 </Text>
               </div>
@@ -76,45 +76,41 @@ export const ControlPanel: React.FC = () => {
               onClick={() => setIsSettingsOpen(false)}
               aria-label="Close Control Panel"
             >
-              <X size={15} />
+              <X size={16} />
             </button>
           </div>
 
-          <Divider style={{ margin: '0 0 8px 0', borderColor: '#222222' }} />
+          {/* Responsive Geist Nav Bar */}
+          <div className="geist-nav-bar" role="tablist">
+            {tabs.map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                role="tab"
+                aria-selected={tab === t.id}
+                className={`geist-nav-btn ${tab === t.id ? 'active' : ''}`}
+                onClick={() => setTab(t.id)}
+              >
+                {t.icon}
+                <span>{t.label}</span>
+              </button>
+            ))}
+          </div>
 
-          {/* Geist Tabs Navigation */}
-          <Tabs
-            value={tab}
-            onChange={(val: string) => setTab(val)}
-            className="geist-tabs-container"
-            align="left"
-            leftSpace={0}
-          >
-            <Tabs.Item label="Appearance" value="appearance">
-              <AppearanceTab />
-            </Tabs.Item>
-            <Tabs.Item label="Identity" value="identity">
-              <GeneralTab />
-            </Tabs.Item>
-            <Tabs.Item label="Intelligence" value="intelligence">
-              <IntelligenceTab />
-            </Tabs.Item>
-            <Tabs.Item label="Nodes" value="nodes">
-              <NodesTab />
-            </Tabs.Item>
-            <Tabs.Item label="Timing" value="timing">
-              <TimingTab />
-            </Tabs.Item>
-          </Tabs>
-
-          <Spacer h={0.5} />
-          <Divider style={{ margin: '8px 0', borderColor: '#222222' }} />
+          {/* Unified Tab Scroll Container */}
+          <div className="geist-tab-scroll-container">
+            {tab === 'appearance' && <AppearanceTab />}
+            {tab === 'identity' && <GeneralTab />}
+            {tab === 'intelligence' && <IntelligenceTab />}
+            {tab === 'nodes' && <NodesTab />}
+            {tab === 'timing' && <TimingTab />}
+          </div>
 
           {/* Footer Actions */}
           <div className="geist-card-footer">
             <Button
               auto
-              scale={0.78}
+              scale={0.82}
               type="abort"
               icon={<RefreshCw size={13} />}
               onClick={resetSettings}
@@ -124,14 +120,16 @@ export const ControlPanel: React.FC = () => {
             </Button>
             <Button
               auto
-              scale={0.78}
+              scale={0.82}
               type="secondary"
               icon={<Check size={13} />}
               onClick={() => setIsSettingsOpen(false)}
               style={{
                 backgroundColor: '#ffffff',
                 color: '#000000',
-                fontWeight: 600
+                fontWeight: 600,
+                paddingLeft: 20,
+                paddingRight: 20
               }}
             >
               Done

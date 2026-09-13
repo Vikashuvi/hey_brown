@@ -48,6 +48,7 @@ models/
 .env
 .env.local
 config/local.yaml
+config/settings.json
 
 /tmp
 

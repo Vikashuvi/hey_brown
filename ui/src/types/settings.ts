@@ -89,6 +89,8 @@ export interface BrownSettings {
   cloudAiModel: string
   cloudAiVisionModel: string
   cloudFallbackEnabled: boolean
+  geminiApiKey: string
+  openaiApiKey: string
   privacyMode: PrivacyMode
   routingMode: RoutingMode
   visionRouting: VisionRoutingMode
@@ -131,9 +133,11 @@ export const DEFAULT_SETTINGS: BrownSettings = {
   localAiIdleUnload: true,
   cloudAiEnabled: false,
   cloudAiProvider: 'gemini',
-  cloudAiModel: 'gemini-2.0-flash',
-  cloudAiVisionModel: 'gemini-2.0-flash',
+  cloudAiModel: 'gemini-flash-latest',
+  cloudAiVisionModel: 'gemini-flash-latest',
   cloudFallbackEnabled: false,
+  geminiApiKey: '',
+  openaiApiKey: '',
   privacyMode: 'local_only',
   routingMode: 'local_first',
   visionRouting: 'auto',

@@ -14,24 +14,25 @@
   --ds-blue-700: #0070f3;
 }
 
+/* ── Modal Overlay ───────────────────────────────────────────── */
 .geist-control-panel-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.65);
-  -webkit-backdrop-filter: blur(12px);
-  backdrop-filter: blur(12px);
+  background: rgba(0, 0, 0, 0.72);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 9999;
-  padding: 12px;
+  padding: 16px;
   animation: geist-fade-in 0.18s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 @keyframes geist-fade-in {
   from {
     opacity: 0;
-    transform: scale(0.98);
+    transform: scale(0.985);
   }
   to {
     opacity: 1;
@@ -40,16 +41,26 @@
 }
 
 .geist-control-panel-container {
-  width: 100%;
-  max-width: 420px;
+  width: 95vw;
+  max-width: 740px;
+  height: 86vh;
+  max-height: 800px;
+  display: flex;
+  flex-direction: column;
 }
 
 .geist-control-card {
   width: 100% !important;
-  padding: 14px 16px !important;
+  height: 100% !important;
+  display: flex !important;
+  flex-direction: column !important;
+  padding: 18px 22px !important;
   background-color: var(--ds-background-100) !important;
   border: 1px solid var(--ds-gray-400) !important;
   font-family: 'Geist Sans', -apple-system, BlinkMacSystemFont, sans-serif !important;
+  border-radius: 12px !important;
+  box-shadow: 0 24px 48px rgba(0, 0, 0, 0.9), 0 0 0 1px rgba(255, 255, 255, 0.08) !important;
+  overflow: hidden !important;
 }
 
 /* ── Header ─────────────────────────────────────────────────── */
@@ -57,19 +68,20 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding-bottom: 10px;
+  padding-bottom: 12px;
+  flex-shrink: 0;
 }
 
 .geist-header-title-group {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
 }
 
 .geist-header-icon {
-  width: 28px;
-  height: 28px;
-  border-radius: 6px;
+  width: 30px;
+  height: 30px;
+  border-radius: 7px;
   background: #111111;
   border: 1px solid #333333;
   display: flex;
@@ -82,8 +94,8 @@
   background: transparent;
   border: none;
   color: #888888;
-  width: 26px;
-  height: 26px;
+  width: 28px;
+  height: 28px;
   border-radius: 6px;
   display: flex;
   align-items: center;
@@ -97,29 +109,82 @@
   color: #ffffff;
 }
 
-/* ── Tabs Content ───────────────────────────────────────────── */
-.geist-tabs-container {
-  margin-top: 4px;
+/* ── Navigation Tab Bar ─────────────────────────────────────── */
+.geist-nav-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border-bottom: 1px solid #222222;
+  padding-bottom: 6px;
+  margin-bottom: 12px;
+  overflow-x: auto;
+  flex-shrink: 0;
+  scrollbar-width: none;
 }
 
-.geist-tabs-container .content {
-  padding-top: 12px !important;
+.geist-nav-bar::-webkit-scrollbar {
+  display: none;
+}
+
+.geist-nav-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 13px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  color: #888888;
+  font-size: 0.83rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+  white-space: nowrap;
+  user-select: none;
+}
+
+.geist-nav-btn:hover {
+  color: #ffffff;
+  background: #141414;
+}
+
+.geist-nav-btn.active {
+  color: #ffffff;
+  background: #1c1c1c;
+  border-color: #333333;
+  font-weight: 600;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+}
+
+/* ── Single Unified Scroll Container ────────────────────────── */
+.geist-tab-scroll-container {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 6px;
+  overscroll-behavior: contain;
+}
+
+.geist-tab-scroll-container::-webkit-scrollbar {
+  width: 6px;
+}
+
+.geist-tab-scroll-container::-webkit-scrollbar-thumb {
+  background: #333333;
+  border-radius: 9999px;
+}
+
+.geist-tab-scroll-container::-webkit-scrollbar-thumb:hover {
+  background: #555555;
 }
 
 .geist-tab-content {
-  min-height: 240px;
-  max-height: 360px;
-  overflow-y: auto;
-  padding-right: 4px;
-}
-
-.geist-tab-content::-webkit-scrollbar {
-  width: 5px;
-}
-
-.geist-tab-content::-webkit-scrollbar-thumb {
-  background: #333333;
-  border-radius: 9999px;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  animation: geist-fade-in 0.15s ease-out both;
+  padding-bottom: 16px;
 }
 
 /* ── Form Groups & Labels ───────────────────────────────────── */
@@ -248,85 +313,107 @@
 
 .geist-btn-icon-add {
   background: #1a1a1a;
-  border: 1px solid #333333;
-  color: #ededed;
+  border: 1px dashed #383838;
   border-radius: 6px;
-  width: 32px;
-  height: 32px;
-  display: flex;
+  color: #888888;
+  cursor: pointer;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  cursor: pointer;
-  flex-shrink: 0;
-  transition: background 0.15s ease, border-color 0.15s ease;
+  padding: 4px 8px;
+  font-size: 0.75rem;
+  transition: all 0.15s ease;
 }
 
 .geist-btn-icon-add:hover {
-  background: #262626;
-  border-color: #666666;
+  background: #252525;
+  border-color: #555555;
   color: #ffffff;
 }
 
-/* ── Footer ─────────────────────────────────────────────────── */
-.geist-card-footer {
+.geist-add-phrase-row {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  padding-top: 4px;
+  gap: 8px;
 }
 
-/* ── Browser Mode Quick Toolbar ─────────────────────────────── */
-.geist-browser-toolbar {
-  position: fixed;
-  top: 14px;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 900;
+/* ── Setting Rows & Cards ────────────────────────────────────── */
+.geist-setting-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.geist-section-card {
+  background: #0d0d0d;
+  border: 1px solid #222222;
+  border-radius: 8px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* ── Radio Pills ────────────────────────────────────────────── */
+.geist-radio-group {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.geist-radio-pill {
+  flex: 1;
+  min-width: 100px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: 1px solid #282828;
+  background: #0d0d0d;
+  color: #888888;
+  font-size: 0.78rem;
+  cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  pointer-events: auto;
+  transition: all 0.15s ease;
 }
 
-.geist-browser-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 14px;
-  background: #000000;
-  border: 1px solid #333333;
-  border-radius: 9999px;
-  color: #ededed;
-  font-family: 'Geist Sans', -apple-system, sans-serif;
-  font-size: 0.82rem;
-  cursor: pointer;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.7);
-  transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.geist-browser-btn:hover {
-  background: #111111;
-  border-color: #666666;
+.geist-radio-pill:hover {
+  border-color: #444444;
   color: #ffffff;
-  transform: translateY(-1px);
-  box-shadow: 0 6px 22px rgba(0, 0, 0, 0.9);
 }
 
-.geist-btn-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: #0070f3;
-  box-shadow: 0 0 8px #0070f3;
+.geist-radio-pill.active {
+  border-color: #ffffff;
+  background: #181818;
+  color: #ffffff;
+  font-weight: 500;
 }
 
-.geist-sep {
-  color: #444444;
+/* ── Model / Preset Card ────────────────────────────────────── */
+.geist-model-card {
+  padding: 10px 12px;
+  border-radius: 6px;
+  background: #0d0d0d;
+  border: 1px solid #242424;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
 }
 
+.geist-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 10px;
+  border-top: 1px solid #222222;
+  flex-shrink: 0;
+}
+
+/* ── Shortcut Pill ──────────────────────────────────────────── */
 .geist-kbd {
   font-family: 'Geist Mono', monospace;
-  font-size: 0.68rem;
+  font-size: 0.72rem;
   background: #1a1a1a;
   border: 1px solid #333333;
   border-radius: 4px;
@@ -364,7 +451,7 @@
 .geist-window-title-center {
   display: flex;
   align-items: center;
-  font-size: 0.8rem;
+  font-size: 0.82rem;
   font-weight: 500;
   color: #999999;
   letter-spacing: -0.01em;
@@ -372,9 +459,10 @@
 
 .geist-window-body {
   flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
-  padding: 16px 24px;
+  padding: 18px 24px 14px 24px;
   overflow: hidden;
 }
 
@@ -382,6 +470,8 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-shrink: 0;
+  margin-bottom: 10px;
 }
 
 .geist-window-brand {
@@ -390,37 +480,12 @@
   gap: 12px;
 }
 
-.geist-window-tabs {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-.geist-window-tab-scroll {
-  height: calc(100vh - 230px);
-  min-height: 380px;
-  max-height: 480px;
-  overflow-y: auto;
-  padding-right: 6px;
-  padding-top: 4px;
-}
-
-.geist-window-tab-scroll::-webkit-scrollbar {
-  width: 6px;
-}
-
-.geist-window-tab-scroll::-webkit-scrollbar-thumb {
-  background: #333333;
-  border-radius: 9999px;
-}
-
 .geist-window-footer {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding-top: 4px;
+  padding-top: 12px;
+  border-top: 1px solid #222222;
   flex-shrink: 0;
+  margin-top: 8px;
 }
-
-

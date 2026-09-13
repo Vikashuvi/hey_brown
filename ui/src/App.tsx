@@ -42,7 +42,7 @@ const BrownOverlayContent: React.FC = () => {
     }
 
     // In browser: open a separate dedicated popup window
-    const popup = window.open('/?view=settings', 'BrownControlPanel', 'width=540,height=680,resizable=yes')
+    const popup = window.open('/?view=settings', 'BrownControlPanel', 'width=740,height=780,resizable=yes')
     if (!popup || popup.closed) {
       // Fallback to overlay modal if popup blocker intervened
       setIsSettingsOpen(true)

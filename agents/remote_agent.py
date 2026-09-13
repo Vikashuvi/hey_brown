@@ -43,8 +43,9 @@ class RemoteAgent(DeviceAgent):
         except Exception:
             return False
 
-    def _send_command(self, endpoint: str, payload: Optional[Dict[str, Any]] = None, method: str = "POST") -> DeviceCommandResult:
+    def _send_command(self, endpoint: str, payload: Optional[Dict[str, Any]] = None, method: str = "POST", timeout: Optional[float] = None) -> DeviceCommandResult:
         """Issue an authenticated, timeout-bounded HTTP request to the remote node."""
+        req_timeout = timeout if timeout is not None else self.timeout
         try:
             headers = {"Content-Type": "application/json"}
             if self.auth_token:
@@ -52,9 +53,9 @@ class RemoteAgent(DeviceAgent):
 
             url = f"{self.base_url}/{endpoint.lstrip('/')}"
             if method.upper() == "GET":
-                resp = requests.get(url, headers=headers, timeout=self.timeout)
+                resp = requests.get(url, headers=headers, timeout=req_timeout)
             else:
-                resp = requests.post(url, json=payload or {}, headers=headers, timeout=self.timeout)
+                resp = requests.post(url, json=payload or {}, headers=headers, timeout=req_timeout)
 
             try:
                 data = resp.json()
@@ -115,15 +116,15 @@ class RemoteAgent(DeviceAgent):
     # 7. AI Health Status & Telemetry
     def get_ai_status(self, model: Optional[str] = None) -> DeviceCommandResult:
         endpoint = f"ai/status?model={model}" if model else "ai/status"
-        return self._send_command(endpoint, method="GET")
+        return self._send_command(endpoint, method="GET", timeout=5.0)
 
     # 8. Available Models Discovery
     def get_ai_models(self) -> DeviceCommandResult:
-        return self._send_command("ai/models", method="GET")
+        return self._send_command("ai/models", method="GET", timeout=10.0)
 
     # 9. Preload / Warm Model
     def ai_warm(self, model: str, keep_alive: str = "15m") -> DeviceCommandResult:
-        return self._send_command("ai/warm", {"model": model, "keep_alive": keep_alive}, method="POST")
+        return self._send_command("ai/warm", {"model": model, "keep_alive": keep_alive}, method="POST", timeout=35.0)
 
     # 10. AI Chat / Inference
     def ai_chat(self, messages: list, model: str = "qwen3-vl:2b", temperature: float = 0.2, max_tokens: int = 512, tools: Optional[list] = None) -> DeviceCommandResult:
@@ -134,12 +135,12 @@ class RemoteAgent(DeviceAgent):
             "max_tokens": max_tokens,
             "tools": tools or []
         }
-        return self._send_command("ai/chat", payload, method="POST")
+        return self._send_command("ai/chat", payload, method="POST", timeout=60.0)
 
     # 11. Unload Model from Memory
     def ai_unload(self, model: Optional[str] = None) -> DeviceCommandResult:
         payload = {"model": model} if model else {}
-        return self._send_command("ai/unload", payload, method="POST")
+        return self._send_command("ai/unload", payload, method="POST", timeout=10.0)
 
 
 # Backward compatibility alias

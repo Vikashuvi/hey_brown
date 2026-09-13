@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { useSettings } from '../../context/SettingsContext'
-import { Text, Input, Toggle, Slider, Select, Spacer, Badge, Dot, Card, Divider } from './geist'
-import { Cpu, Shield, Zap, Activity } from '@geist-ui/icons'
+import { Text, Input, Toggle, Slider, Select, Spacer, Badge, Dot, Card, Divider, Button } from './geist'
+import { Cpu, Shield, Zap, Activity, Key, Check } from '@geist-ui/icons'
 
 interface WakeDiagnosticData {
   wake_phrase?: string
@@ -40,8 +40,56 @@ export const IntelligenceTab: React.FC = () => {
     ready: true,
     loaded: true,
     model: settings.localAiModel,
-    device: 'error_boy'
+    device: 'remote_node'
   })
+
+  const [testingKey, setTestingKey] = useState<boolean>(false)
+  const [keyStatus, setKeyStatus] = useState<'valid' | 'invalid' | null>(null)
+  const [keyNotice, setKeyNotice] = useState<string | null>(null)
+
+  const testApiKey = async () => {
+    setTestingKey(true)
+    setKeyStatus(null)
+    setKeyNotice(null)
+    try {
+      const isGemini = settings.cloudAiProvider === 'gemini'
+      const rawKey = isGemini ? settings.geminiApiKey : settings.openaiApiKey
+      const key = rawKey?.trim()?.replace(/\.+$/, '')
+      if (!key) {
+        setKeyStatus('invalid')
+        setKeyNotice('Please enter an API key first.')
+        return
+      }
+
+      if (isGemini) {
+        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${key}`)
+        if (res.ok) {
+          setKeyStatus('valid')
+          setKeyNotice('Gemini API key is verified and active!')
+        } else {
+          const err = await res.json().catch(() => ({}))
+          setKeyStatus('invalid')
+          setKeyNotice(err?.error?.message || `Google API returned HTTP ${res.status}`)
+        }
+      } else {
+        const res = await fetch('https://api.openai.com/v1/models', {
+          headers: { Authorization: `Bearer ${key}` }
+        })
+        if (res.ok) {
+          setKeyStatus('valid')
+          setKeyNotice('OpenAI API key is verified and active!')
+        } else {
+          setKeyStatus('invalid')
+          setKeyNotice(`OpenAI API returned HTTP ${res.status}`)
+        }
+      }
+    } catch (e: any) {
+      setKeyStatus('invalid')
+      setKeyNotice(e.message || 'Connection failed')
+    } finally {
+      setTestingKey(false)
+    }
+  }
 
   // Listen for live wake and local AI diagnostic telemetry over WebSocket if connected
   useEffect(() => {
@@ -283,10 +331,65 @@ export const IntelligenceTab: React.FC = () => {
                       textTransform: 'uppercase'
                     }}
                   >
-                    {prov === 'gemini' ? 'Gemini 2.0 Flash' : 'OpenAI (GPT-4o-mini)'}
+                    {prov === 'gemini' ? 'Gemini Flash' : 'OpenAI (GPT-4o-mini)'}
                   </button>
                 ))}
               </div>
+            </div>
+
+            {/* Cloud Provider API Key */}
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <Key size={13} color="#888" />
+                  <Text small style={{ color: '#ccc', fontSize: '0.76rem', margin: 0 }}>
+                    {settings.cloudAiProvider === 'gemini' ? 'Google Gemini API Key' : 'OpenAI API Key'}
+                  </Text>
+                </div>
+                {keyStatus ? (
+                  <Badge type={keyStatus === 'valid' ? 'success' : 'error'} scale={0.65}>
+                    {keyStatus === 'valid' ? 'Active & Valid' : 'Invalid'}
+                  </Badge>
+                ) : (
+                  (settings.cloudAiProvider === 'gemini' ? settings.geminiApiKey : settings.openaiApiKey) && (
+                    <Badge type="secondary" scale={0.65}>
+                      Configured
+                    </Badge>
+                  )
+                )}
+              </div>
+              <div style={{ display: 'flex', gap: 6 }}>
+                <Input
+                  htmlType="password"
+                  width="100%"
+                  scale={0.8}
+                  value={(settings.cloudAiProvider === 'gemini' ? settings.geminiApiKey : settings.openaiApiKey) || ''}
+                  onChange={(e: any) => {
+                    const val = e.target.value.trim()
+                    if (settings.cloudAiProvider === 'gemini') {
+                      updateSettings({ geminiApiKey: val })
+                    } else {
+                      updateSettings({ openaiApiKey: val })
+                    }
+                  }}
+                  placeholder={settings.cloudAiProvider === 'gemini' ? 'Paste Gemini Key (e.g. AQ... or AIza...)' : 'Paste OpenAI Key (sk-...)'}
+                />
+                <Button
+                  auto
+                  scale={0.78}
+                  type="secondary"
+                  loading={testingKey}
+                  onClick={testApiKey}
+                  style={{ backgroundColor: '#222', borderColor: '#444', color: '#fff', padding: '0 12px' }}
+                >
+                  Test
+                </Button>
+              </div>
+              {keyNotice && (
+                <Text small style={{ color: keyStatus === 'valid' ? '#10b981' : '#f43f5e', fontSize: '0.72rem', display: 'block', marginTop: 3 }}>
+                  {keyNotice}
+                </Text>
+              )}
             </div>
 
             <div>

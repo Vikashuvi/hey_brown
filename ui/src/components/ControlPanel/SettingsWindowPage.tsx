@@ -5,8 +5,8 @@ import { GeneralTab } from './GeneralTab'
 import { IntelligenceTab } from './IntelligenceTab'
 import { NodesTab } from './NodesTab'
 import { TimingTab } from './TimingTab'
-import { Tabs, Button, Badge, Dot, Divider, Spacer, Text } from './geist'
-import { Sliders, RefreshCw, Check } from '@geist-ui/icons'
+import { Button, Badge, Dot, Text } from './geist'
+import { Sliders, RefreshCw, Check, User, Cpu, Server, Clock } from '@geist-ui/icons'
 import './ControlPanel.css'
 
 export const SettingsWindowPage: React.FC = () => {
@@ -35,6 +35,14 @@ export const SettingsWindowPage: React.FC = () => {
     }
   }
 
+  const tabs = [
+    { id: 'appearance', label: 'Appearance', icon: <Sliders size={14} /> },
+    { id: 'identity', label: 'Identity', icon: <User size={14} /> },
+    { id: 'intelligence', label: 'Intelligence', icon: <Cpu size={14} /> },
+    { id: 'nodes', label: 'Nodes & Devices', icon: <Server size={14} /> },
+    { id: 'timing', label: 'Voice & Timing', icon: <Clock size={14} /> },
+  ]
+
   return (
     <div className="geist-settings-window-root">
       {/* Draggable Title Area for macOS */}
@@ -55,14 +63,14 @@ export const SettingsWindowPage: React.FC = () => {
             </div>
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <Text b style={{ fontSize: '1.1rem', color: '#ffffff', margin: 0 }}>
+                <Text b style={{ fontSize: '1.05rem', color: '#ffffff', margin: 0 }}>
                   {settings.assistantName} Assistant
                 </Text>
                 <Badge type="secondary" scale={0.7} style={{ textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                   Control Panel
                 </Badge>
               </div>
-              <Text small type="secondary" style={{ fontSize: '0.78rem', margin: 0 }}>
+              <Text small type="secondary" style={{ fontSize: '0.76rem', margin: 0 }}>
                 <Dot type="success" style={{ display: 'inline-flex', padding: 0 }}>
                   Vercel Geist Design System
                 </Dot>
@@ -71,45 +79,31 @@ export const SettingsWindowPage: React.FC = () => {
           </div>
         </div>
 
-        <Spacer h={0.6} />
-        <Divider style={{ margin: '0 0 12px 0', borderColor: '#262626' }} />
+        {/* Responsive Geist Nav Bar */}
+        <div className="geist-nav-bar" role="tablist">
+          {tabs.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              role="tab"
+              aria-selected={tab === t.id}
+              className={`geist-nav-btn ${tab === t.id ? 'active' : ''}`}
+              onClick={() => setTab(t.id)}
+            >
+              {t.icon}
+              <span>{t.label}</span>
+            </button>
+          ))}
+        </div>
 
-        {/* Geist Tabs */}
-        <Tabs
-          value={tab}
-          onChange={(val: string) => setTab(val)}
-          className="geist-window-tabs"
-          align="left"
-          leftSpace={0}
-        >
-          <Tabs.Item label="Appearance" value="appearance">
-            <div className="geist-window-tab-scroll">
-              <AppearanceTab />
-            </div>
-          </Tabs.Item>
-          <Tabs.Item label="Identity" value="identity">
-            <div className="geist-window-tab-scroll">
-              <GeneralTab />
-            </div>
-          </Tabs.Item>
-          <Tabs.Item label="Intelligence" value="intelligence">
-            <div className="geist-window-tab-scroll">
-              <IntelligenceTab />
-            </div>
-          </Tabs.Item>
-          <Tabs.Item label="Nodes" value="nodes">
-            <div className="geist-window-tab-scroll">
-              <NodesTab />
-            </div>
-          </Tabs.Item>
-          <Tabs.Item label="Timing" value="timing">
-            <div className="geist-window-tab-scroll">
-              <TimingTab />
-            </div>
-          </Tabs.Item>
-        </Tabs>
-
-        <Divider style={{ margin: '16px 0 12px 0', borderColor: '#262626' }} />
+        {/* Unified Tab Scroll Container */}
+        <div className="geist-tab-scroll-container">
+          {tab === 'appearance' && <AppearanceTab />}
+          {tab === 'identity' && <GeneralTab />}
+          {tab === 'intelligence' && <IntelligenceTab />}
+          {tab === 'nodes' && <NodesTab />}
+          {tab === 'timing' && <TimingTab />}
+        </div>
 
         {/* Footer Actions */}
         <div className="geist-window-footer">
@@ -134,8 +128,8 @@ export const SettingsWindowPage: React.FC = () => {
               backgroundColor: '#ffffff',
               color: '#000000',
               fontWeight: 600,
-              paddingLeft: 18,
-              paddingRight: 18
+              paddingLeft: 20,
+              paddingRight: 20
             }}
           >
             Done

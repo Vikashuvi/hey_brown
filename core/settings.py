@@ -42,9 +42,11 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
     "localAiIdleUnload": True,
     "cloudAiEnabled": False,
     "cloudAiProvider": "gemini",
-    "cloudAiModel": "gemini-2.0-flash",
-    "cloudAiVisionModel": "gemini-2.0-flash",
+    "cloudAiModel": "gemini-flash-latest",
+    "cloudAiVisionModel": "gemini-flash-latest",
     "cloudFallbackEnabled": False,
+    "geminiApiKey": "",
+    "openaiApiKey": "",
     "privacyMode": "local_only",      # "local_only" | "private" | "normal"
     "routingMode": "local_first",      # "local_first" | "deterministic_first" | "cloud_first"
     "visionRouting": "auto",          # "auto" | "local_only" | "cloud_only"
@@ -59,23 +61,43 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
 }
 
 
-
-
 def load_settings() -> Dict[str, Any]:
     """Load settings from JSON, returning defaults for any missing fields."""
     with _lock:
         if not os.path.exists(SETTINGS_FILE):
-            return dict(DEFAULT_SETTINGS)
+            merged = dict(DEFAULT_SETTINGS)
+            if os.environ.get("GEMINI_API_KEY"):
+                merged["geminiApiKey"] = os.environ["GEMINI_API_KEY"].strip().rstrip(".")
+            if os.environ.get("OPENAI_API_KEY"):
+                merged["openaiApiKey"] = os.environ["OPENAI_API_KEY"].strip()
+            return merged
 
         try:
             with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
                 data = json.load(f)
                 merged = dict(DEFAULT_SETTINGS)
                 merged.update(data)
+
+                # Sync environment variables for cloud AI providers
+                if merged.get("geminiApiKey"):
+                    os.environ["GEMINI_API_KEY"] = merged["geminiApiKey"].strip().rstrip(".")
+                elif os.environ.get("GEMINI_API_KEY"):
+                    merged["geminiApiKey"] = os.environ["GEMINI_API_KEY"].strip().rstrip(".")
+
+                if merged.get("openaiApiKey"):
+                    os.environ["OPENAI_API_KEY"] = merged["openaiApiKey"].strip()
+                elif os.environ.get("OPENAI_API_KEY"):
+                    merged["openaiApiKey"] = os.environ["OPENAI_API_KEY"].strip()
+
                 return merged
         except Exception as e:
             print(f"[Settings] Error reading {SETTINGS_FILE}: {e}, using defaults.")
-            return dict(DEFAULT_SETTINGS)
+            merged = dict(DEFAULT_SETTINGS)
+            if os.environ.get("GEMINI_API_KEY"):
+                merged["geminiApiKey"] = os.environ["GEMINI_API_KEY"].strip().rstrip(".")
+            if os.environ.get("OPENAI_API_KEY"):
+                merged["openaiApiKey"] = os.environ["OPENAI_API_KEY"].strip()
+            return merged
 
 
 def save_settings(settings: Dict[str, Any]) -> bool:
@@ -85,6 +107,12 @@ def save_settings(settings: Dict[str, Any]) -> bool:
             os.makedirs(os.path.dirname(SETTINGS_FILE), exist_ok=True)
             merged = dict(DEFAULT_SETTINGS)
             merged.update(settings)
+
+            # Sync active environment variables
+            if merged.get("geminiApiKey"):
+                os.environ["GEMINI_API_KEY"] = merged["geminiApiKey"].strip().rstrip(".")
+            if merged.get("openaiApiKey"):
+                os.environ["OPENAI_API_KEY"] = merged["openaiApiKey"].strip()
             
             # Temporary file write for atomic replacement
             temp_file = f"{SETTINGS_FILE}.tmp"
@@ -96,3 +124,7 @@ def save_settings(settings: Dict[str, Any]) -> bool:
         except Exception as e:
             print(f"[Settings] Error saving settings: {e}")
             return False
+
+
+# Alias for load_settings
+get_settings = load_settings

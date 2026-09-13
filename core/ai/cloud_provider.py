@@ -31,8 +31,9 @@ class CloudAIProvider(AIProvider):
             self.api_key = api_key or os.environ.get("OPENAI_API_KEY")
             self.endpoint = "https://api.openai.com/v1/chat/completions"
         elif self.provider_name == "gemini":
-            self.model = model or "gemini-2.0-flash"
-            self.api_key = api_key or os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
+            self.model = model or "gemini-flash-latest"
+            raw_key = api_key or os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY") or ""
+            self.api_key = raw_key.strip().rstrip(".")
             self.endpoint = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent"
         else:
             self.model = model or "default"

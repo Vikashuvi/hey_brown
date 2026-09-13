@@ -68,7 +68,7 @@ devices:
     display_name: "Error Boy"
     enabled: true
     is_local: false
-    base_url: "http://error-boy.local:8765"
+    base_url: "http://10.217.30.46:8765"
     timeout: 2.0
     aliases:
       - "error boy"
@@ -102,7 +102,7 @@ intelligence:
     max_image_dimension: 768         # Prevent VRAM overflow on GTX 1650 4GB
     runtime: "ollama"                # "ollama", "vllm", or "auto"
 
-    base_url: "http://error-boy.local:8765"
+    base_url: "http://10.217.30.46:8765"
     context_length: 4096
     max_output_tokens: 512
     temperature: 0.2
@@ -111,21 +111,21 @@ intelligence:
     auto_warm: true
     idle_unload_minutes: 15
   cloud_ai:
-    enabled: false
-    preferred_provider: "gemini"     # "gemini" (Gemini 2.0 Flash) or "openai" (GPT-4o-mini)
-    model: "gemini-2.0-flash"
-    vision_model: "gemini-2.0-flash"
+    enabled: true
+    preferred_provider: "gemini"     # "gemini" (Gemini Flash Latest) or "openai" (GPT-4o-mini)
+    model: "gemini-flash-latest"
+    vision_model: "gemini-flash-latest"
     fallback_provider: null
     api_key_env: "GEMINI_API_KEY"
-    privacy_mode: "local_only"       # "local_only", "private", "normal"
-    use_for_research: false
-    use_for_complex_tasks: false
-    use_when_local_fails: false
+    privacy_mode: "normal"           # "local_only", "private", "normal"
+    use_for_research: true
+    use_for_complex_tasks: true
+    use_when_local_fails: true
   routing:
     local_first: true
     deterministic_first: true
-    cloud_fallback: false
-    privacy_mode: "local_only"
+    cloud_fallback: true
+    privacy_mode: "normal"
     vision_routing: "auto"           # "auto", "local_only", "cloud_only"
 
 

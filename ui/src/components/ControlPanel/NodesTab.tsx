@@ -184,7 +184,7 @@ export const NodesTab: React.FC = () => {
   }
 
   return (
-    <div className="geist-tab-content" style={{ maxHeight: '420px', overflowY: 'auto', paddingRight: '4px' }}>
+    <div className="geist-tab-content">
       {/* Dynamic Node Enable */}
       <div className="geist-setting-row" style={{ alignItems: 'flex-start' }}>
         <div>

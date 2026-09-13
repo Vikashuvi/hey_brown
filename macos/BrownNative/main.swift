@@ -225,16 +225,17 @@ class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler, WKNa
 
     // ── Dedicated macOS Control Panel Window Setup ───────────────────────
     private func setupSettingsWindow() {
-        let width: CGFloat = 540
-        let height: CGFloat = 680
+        let width: CGFloat = 740
+        let height: CGFloat = 780
         let rect = NSRect(x: 0, y: 0, width: width, height: height)
 
         let window = NSWindow(
             contentRect: rect,
-            styleMask: [.titled, .closable, .miniaturizable, .fullSizeContentView],
+            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
             backing: .buffered,
             defer: false
         )
+        window.minSize = NSSize(width: 600, height: 550)
 
         window.title = "Brown — Control Panel"
         window.titlebarAppearsTransparent = true

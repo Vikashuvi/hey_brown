@@ -16,6 +16,7 @@ interface SettingsContextType {
 }
 
 const SETTINGS_STORAGE_KEY = 'brown_user_settings_v1'
+const SETTINGS_CHANNEL_NAME = 'brown_settings_sync_channel'
 
 const SettingsContext = createContext<SettingsContextType | undefined>(undefined)
 
@@ -46,6 +47,116 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     return false
   })
 
+  // BroadcastChannel for instant cross-window sync (mascot window <-> popup window)
+  const channelRef = React.useRef<BroadcastChannel | null>(null)
+  useEffect(() => {
+    try {
+      const ch = new BroadcastChannel(SETTINGS_CHANNEL_NAME)
+      channelRef.current = ch
+      ch.onmessage = (e) => {
+        if (e.data && e.data.type === 'SETTINGS_SYNC' && e.data.settings) {
+          setSettings(prev => ({ ...prev, ...e.data.settings }))
+        }
+      }
+      return () => {
+        ch.close()
+        channelRef.current = null
+      }
+    } catch {
+      // BroadcastChannel optional fallback
+    }
+  }, [])
+
+  // Listen to cross-window storage event fallback
+  useEffect(() => {
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key === SETTINGS_STORAGE_KEY && e.newValue) {
+        try {
+          const parsed = JSON.parse(e.newValue)
+          setSettings(prev => ({ ...prev, ...parsed }))
+        } catch {
+          // Ignore
+        }
+      }
+    }
+    window.addEventListener('storage', handleStorage)
+    return () => window.removeEventListener('storage', handleStorage)
+  }, [])
+
+  // Live WebSocket sync directly to Python UIEventBridge (ws://127.0.0.1:8766)
+  const wsRef = React.useRef<WebSocket | null>(null)
+  useEffect(() => {
+    let ws: WebSocket | null = null
+    let reconnectTimeout: any = null
+    let active = true
+
+    function connectWs() {
+      if (!active) return
+      try {
+        ws = new WebSocket('ws://127.0.0.1:8766')
+        wsRef.current = ws
+
+        ws.onopen = () => {
+          // Request fresh settings saved on backend disk
+          try {
+            ws?.send(JSON.stringify({ action: 'get_settings' }))
+          } catch {
+            // Ignore
+          }
+        }
+
+        ws.onmessage = (evt) => {
+          try {
+            const msg = JSON.parse(evt.data)
+            let incomingSettings: Partial<BrownSettings> | null = null
+
+            if (msg.event === 'connected' && msg.data?.settings) {
+              incomingSettings = msg.data.settings
+            } else if (msg.event === 'settings_loaded' && msg.data) {
+              incomingSettings = msg.data
+            } else if (msg.event === 'settings_updated' && msg.data) {
+              incomingSettings = msg.data
+            }
+
+            if (incomingSettings) {
+              setSettings(prev => {
+                const merged = { ...prev, ...incomingSettings }
+                try {
+                  localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(merged))
+                } catch {
+                  // Ignore
+                }
+                return merged
+              })
+            }
+          } catch {
+            // Ignore
+          }
+        }
+
+        ws.onclose = () => {
+          wsRef.current = null
+          if (active) reconnectTimeout = setTimeout(connectWs, 3000)
+        }
+
+        ws.onerror = () => {
+          ws?.close()
+        }
+      } catch {
+        if (active) reconnectTimeout = setTimeout(connectWs, 3000)
+      }
+    }
+
+    connectWs()
+
+    return () => {
+      active = false
+      if (reconnectTimeout) clearTimeout(reconnectTimeout)
+      if (ws) ws.close()
+      wsRef.current = null
+    }
+  }, [])
+
   // Global keyboard shortcut: Cmd+, (macOS) or Ctrl+, (Windows/Linux)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -68,7 +179,6 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [])
 
-
   // Sync avatar definition colors directly for 60fps real-time updates
   useEffect(() => {
     if (strobiDefinition && strobiDefinition.colors) {
@@ -77,11 +187,23 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }
   }, [settings.primaryColor, settings.eyeColor])
 
-  // Broadcast settings update to Python backend via WebSocket if connected
+  // Broadcast settings update to Python backend via WebSocket and BroadcastChannel
   const broadcastSettingsToBackend = useCallback((newSettings: BrownSettings) => {
+    // 1. Cross-window broadcast
     try {
-      if ((window as any).__brownWs && (window as any).__brownWs.readyState === WebSocket.OPEN) {
-        (window as any).__brownWs.send(JSON.stringify({
+      channelRef.current?.postMessage({
+        type: 'SETTINGS_SYNC',
+        settings: newSettings
+      })
+    } catch {
+      // Ignore
+    }
+
+    // 2. Python Backend WebSocket broadcast
+    try {
+      const targetWs = wsRef.current || (window as any).__brownWs
+      if (targetWs && targetWs.readyState === WebSocket.OPEN) {
+        targetWs.send(JSON.stringify({
           action: 'save_settings',
           settings: newSettings
         }))

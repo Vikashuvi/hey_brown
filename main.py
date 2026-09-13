@@ -34,6 +34,25 @@ from voice.stt.faster_whisper_stt import FasterWhisperSTT
 from voice.tts.kokoro_tts import KokoroTTS
 
 
+def load_env(env_path: str = ".env"):
+    """Load key-value pairs from .env into os.environ if present."""
+    if os.path.exists(env_path):
+        try:
+            with open(env_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith("#") and "=" in line:
+                        k, v = line.split("=", 1)
+                        k = k.strip()
+                        v = v.strip().strip("'\"")
+                        if k and k not in os.environ:
+                            os.environ[k] = v
+        except Exception:
+            pass
+
+load_env()
+
+
 def load_config(path: str = "config/default.yaml") -> Dict[str, Any]:
     cfg: Dict[str, Any] = {}
     if os.path.exists(path):
@@ -60,10 +79,14 @@ def build_orchestrator(config: Dict[str, Any]) -> BrownOrchestrator:
     # 1. Device agents
     local_agent = LocalAgent()
     node_cfg = config.get("devices", {}).get("remote_node", config.get("devices", {}).get("error_boy", {}))
+    from core.settings import get_settings
+    user_settings = get_settings()
     node_url = (
         os.environ.get("BROWN_REMOTE_URL")
         or os.environ.get("ERROR_BOY_BASE_URL")
-        or node_cfg.get("base_url", "http://error-boy.local:8765")
+        or user_settings.get("remoteNodeUrl")
+        or user_settings.get("localAiUrl")
+        or node_cfg.get("base_url", "http://10.217.30.46:8765")
     )
     remote_agent = RemoteAgent(
         base_url=node_url,
