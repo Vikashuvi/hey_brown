@@ -92,6 +92,24 @@ class SemanticIntent(BaseModel):
                 confidence=self.confidence
             )
 
+        elif self.intent == "local_ai.status":
+            return RoutedAction(
+                action_type="tool_call",
+                tool_name="get_local_ai_status",
+                tool_args={"device": self.device or "remote_node"},
+                target_device=self.device or "remote_node",
+                confidence=self.confidence
+            )
+
+        elif self.intent == "local_ai.manage":
+            return RoutedAction(
+                action_type="tool_call",
+                tool_name="manage_local_ai",
+                tool_args={"action": self.entities.get("action", "warm"), "device": self.device or "remote_node"},
+                target_device=self.device or "remote_node",
+                confidence=self.confidence
+            )
+
         return RoutedAction(
             action_type="conversation",
             direct_response=self.entities.get("response", "I'm ready for your command."),
@@ -180,6 +198,14 @@ class DeterministicIntentRouter:
         )
         self.RE_CLOSE_APP = re.compile(
             rf"(?:can you |could you |please )?(?:close|quit|exit|kill)\s+([a-zA-Z0-9\s]+?)(?:\s+for me|\s+please)?$",
+            re.IGNORECASE
+        )
+        self.RE_LOCAL_AI_STATUS = re.compile(
+            rf"(?:(?:is\s+(?:the\s+)?(?:local\s+)?(?:llm|ai|model)\s+running)|(?:what\s+is|check)\s+(?:the\s+)?(?:local\s+)?(?:llm|ai|model)\s+status|is\s+local\s+ai\s+running|check\s+if\s+(?:the\s+)?(?:local\s+)?(?:llm|model)\s+is\s+(?:loaded|running|ready)|local\s+llm\s+status)(?:\s+(?:on|in|at)\s+(?:the\s+)?({dev_pat}))?",
+            re.IGNORECASE
+        )
+        self.RE_WARM_LOCAL_AI = re.compile(
+            rf"(?:can\s+you\s+)?(?:run|start|load|warm)\s+(?:it|the\s+local\s+llm|the\s+local\s+ai|the\s+local\s+model|the\s+model)\s+(?:on|in|at)\s+(?:the\s+)?({dev_pat})|(?:can\s+you\s+)?(?:run|start|load|warm)\s+it\s+(?:in|on|at)\s+(?:the\s+)?({dev_pat})|(?:warm|load|start)\s+(?:the\s+)?(?:local\s+)?(?:model|llm)",
             re.IGNORECASE
         )
 
@@ -286,6 +312,29 @@ class DeterministicIntentRouter:
                 target_device=device
             )
 
+        # 5b. Local AI Model Control & Status
+        warm_match = self.RE_WARM_LOCAL_AI.search(clean_text)
+        if warm_match:
+            target_match = warm_match.group(1) or warm_match.group(2)
+            device = self.resolve_device(target_match) if target_match else self.device_resolver.default_remote_device
+            return RoutedAction(
+                action_type="tool_call",
+                tool_name="manage_local_ai",
+                tool_args={"action": "warm", "device": device},
+                target_device=device
+            )
+
+        ai_status_match = self.RE_LOCAL_AI_STATUS.search(clean_text)
+        if ai_status_match:
+            target_match = ai_status_match.group(1)
+            device = self.resolve_device(target_match) if target_match else self.device_resolver.default_remote_device
+            return RoutedAction(
+                action_type="tool_call",
+                tool_name="get_local_ai_status",
+                tool_args={"device": device},
+                target_device=device
+            )
+
 
         # 6. Basic greetings & standard conversation
         if clean_text in ("hey brown", "brown", "are you there", "brown are you there", "hello", "hi"):
@@ -328,6 +377,28 @@ class SemanticIntentClassifier:
 
         # Extract target device dynamically
         device = self.device_resolver.resolve(clean)
+
+        # 0. Intent: local_ai.status or local_ai.manage
+        if any(term in clean for term in (
+            "local llm", "local model", "local ai", "llm running", "model running",
+            "run it in secondary", "run it on secondary", "run it in the secondary", "run it on the secondary",
+            "can you run it", "run it on the other", "run it in the other",
+            "warm the model", "load the model", "warm local model"
+        )):
+            if any(term in clean for term in ("run", "start", "load", "warm")):
+                return SemanticIntent(
+                    intent="local_ai.manage",
+                    device=device or self.device_resolver.default_remote_device,
+                    confidence=0.98,
+                    raw_text=text,
+                    entities={"action": "warm"}
+                )
+            return SemanticIntent(
+                intent="local_ai.status",
+                device=device or self.device_resolver.default_remote_device,
+                confidence=0.98,
+                raw_text=text
+            )
 
         # 1. Intent: device.status
         # All natural phrasing variations requested:

@@ -12,7 +12,16 @@ from core.ai.local_provider import LocalAIProvider
 from core.ai.cloud_provider import CloudAIProvider
 from core.ai.router import AIRouter
 from tools.base import ToolRegistry
-from tools.system_tools import OpenAppTool, CloseAppTool, OpenUrlTool, SystemStatusTool, GetRunningAppsTool, GetCapabilitiesTool
+from tools.system_tools import (
+    OpenAppTool,
+    CloseAppTool,
+    OpenUrlTool,
+    SystemStatusTool,
+    GetRunningAppsTool,
+    GetCapabilitiesTool,
+    GetLocalAIStatusTool,
+    ManageLocalAITool
+)
 from agents.local_agent import LocalAgent
 from agents.remote_agent import RemoteAgent
 
@@ -75,6 +84,8 @@ def build_orchestrator(config: Dict[str, Any]) -> BrownOrchestrator:
     registry.register(SystemStatusTool(devices))
     registry.register(GetRunningAppsTool(devices))
     registry.register(GetCapabilitiesTool(devices))
+    registry.register(GetLocalAIStatusTool(devices))
+    registry.register(ManageLocalAITool(devices))
 
     # 3. Audio stream & player
     audio_cfg = config.get("audio", {})
@@ -108,7 +119,7 @@ def build_orchestrator(config: Dict[str, Any]) -> BrownOrchestrator:
     routing_cfg = intel_cfg.get("routing", {})
 
     local_provider = LocalAIProvider(
-        base_url=local_ai_cfg.get("base_url", eb_url),
+        base_url=local_ai_cfg.get("base_url", node_url),
         model=local_ai_cfg.get("model", "qwen3-vl:2b"),
         keep_warm=local_ai_cfg.get("keep_warm", True),
         idle_unload_minutes=local_ai_cfg.get("idle_unload_minutes", 15),
@@ -209,6 +220,7 @@ def main():
     parser = argparse.ArgumentParser(description="Brown — Voice-First AI Computer Assistant")
     parser.add_argument("--config", default="config/default.yaml", help="Path to config file")
     parser.add_argument("--no-warmup", action="store_true", help="Skip model pre-warming")
+    parser.add_argument("--text", action="store_true", help="Run in interactive text/chat mode without microphone")
     args = parser.parse_args()
 
     print("=" * 65)
@@ -216,6 +228,25 @@ def main():
     print("=" * 65)
     cfg = load_config(args.config)
     orchestrator = build_orchestrator(cfg)
+
+    if args.text:
+        print("\n[Brown] Interactive Agent Mode (Agent-Driven Testing)")
+        print("Type any question or command for Brown (e.g. 'is the local llm running', 'can you run it on secondary machine')")
+        print("Type 'exit' to quit.\n")
+        while True:
+            try:
+                user_input = input("You: ").strip()
+                if not user_input:
+                    continue
+                if user_input.lower() in ("exit", "quit", "q"):
+                    print("Goodbye.")
+                    break
+                resp = orchestrator._process_command(user_input)
+                print(f"Brown: {resp}")
+            except (KeyboardInterrupt, EOFError):
+                print("\nGoodbye.")
+                break
+        return
 
     if not args.no_warmup:
         warmup_engine(orchestrator)

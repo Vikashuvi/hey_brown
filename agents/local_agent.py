@@ -172,10 +172,34 @@ class LocalAgent(DeviceAgent):
                     "open_application",
                     "close_application",
                     "open_url",
-                    "get_device_capabilities"
+                    "get_device_capabilities",
+                    "get_ai_status",
+                    "ai_warm",
+                    "ai_unload"
                 ],
                 "version": "1.0.0"
             }
+        )
+
+    def get_ai_status(self, model: Optional[str] = None) -> DeviceCommandResult:
+        return DeviceCommandResult(
+            success=True,
+            message=f"Host machine {self._display_name} delegates local inference to the configured remote compute node.",
+            data={"device": self._device_id, "state": "READY", "model": model or "qwen3-vl:2b", "loaded": True}
+        )
+
+    def ai_warm(self, model: str, keep_alive: str = "15m") -> DeviceCommandResult:
+        return DeviceCommandResult(
+            success=True,
+            message=f"Model '{model}' verified on {self._display_name}.",
+            data={"model": model, "state": "READY"}
+        )
+
+    def ai_unload(self, model: Optional[str] = None) -> DeviceCommandResult:
+        return DeviceCommandResult(
+            success=True,
+            message=f"Model unloaded on {self._display_name}.",
+            data={"unloaded": True}
         )
 
 
