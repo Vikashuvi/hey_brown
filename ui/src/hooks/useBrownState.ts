@@ -274,6 +274,11 @@ export function useBrownState(wsUrl: string = 'ws://127.0.0.1:8766'): UseBrownSt
         break
       }
 
+      case 'local_ai_state_changed': {
+        window.dispatchEvent(new CustomEvent('brown-local-ai-state', { detail: msg.data }))
+        break
+      }
+
       case 'error': {
         setState('ERROR')
         setStatusMessage(msg.data.message || 'Error occurred')

@@ -2,6 +2,8 @@ import React, { useState } from 'react'
 import { useSettings } from '../../context/SettingsContext'
 import { AppearanceTab } from './AppearanceTab'
 import { GeneralTab } from './GeneralTab'
+import { IntelligenceTab } from './IntelligenceTab'
+import { NodesTab } from './NodesTab'
 import { TimingTab } from './TimingTab'
 import { Tabs, Button, Badge, Dot, Divider, Spacer, Text } from './geist'
 import { Sliders, RefreshCw, Check } from '@geist-ui/icons'
@@ -88,6 +90,16 @@ export const SettingsWindowPage: React.FC = () => {
           <Tabs.Item label="Identity" value="identity">
             <div className="geist-window-tab-scroll">
               <GeneralTab />
+            </div>
+          </Tabs.Item>
+          <Tabs.Item label="Intelligence" value="intelligence">
+            <div className="geist-window-tab-scroll">
+              <IntelligenceTab />
+            </div>
+          </Tabs.Item>
+          <Tabs.Item label="Nodes" value="nodes">
+            <div className="geist-window-tab-scroll">
+              <NodesTab />
             </div>
           </Tabs.Item>
           <Tabs.Item label="Timing" value="timing">

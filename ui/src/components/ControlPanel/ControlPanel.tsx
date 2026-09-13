@@ -4,6 +4,7 @@ import { GeneralTab } from './GeneralTab'
 import { AppearanceTab } from './AppearanceTab'
 import { TimingTab } from './TimingTab'
 import { IntelligenceTab } from './IntelligenceTab'
+import { NodesTab } from './NodesTab'
 import { Card, Tabs, Button, Badge, Dot, Divider, Spacer, Text } from './geist'
 import { Sliders, X, RefreshCw, Check } from '@geist-ui/icons'
 import './ControlPanel.css'
@@ -97,6 +98,9 @@ export const ControlPanel: React.FC = () => {
             </Tabs.Item>
             <Tabs.Item label="Intelligence" value="intelligence">
               <IntelligenceTab />
+            </Tabs.Item>
+            <Tabs.Item label="Nodes" value="nodes">
+              <NodesTab />
             </Tabs.Item>
             <Tabs.Item label="Timing" value="timing">
               <TimingTab />

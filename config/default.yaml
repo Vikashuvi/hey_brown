@@ -62,6 +62,7 @@ devices:
       - "here"
       - "this machine"
       - "this computer"
+      - "host"
   error_boy:
     id: "error_boy"
     display_name: "Error Boy"
@@ -85,6 +86,10 @@ devices:
       - "victus"
       - "pc"
       - "forge"
+      - "remote node"
+      - "remote_node"
+      - "node"
+      - "remote"
 
 intelligence:
   assistant_name: "Brown"
@@ -102,6 +107,8 @@ intelligence:
     max_output_tokens: 512
     temperature: 0.2
     keep_warm: true
+    auto_start: true
+    auto_warm: true
     idle_unload_minutes: 15
   cloud_ai:
     enabled: false

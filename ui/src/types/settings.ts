@@ -80,6 +80,10 @@ export interface BrownSettings {
   localAiContextLength: number
   localAiTemperature: number
   localAiKeepWarm: boolean
+  localAiAutoStart: boolean
+  localAiAutoWarm: boolean
+  localAiKeepAliveMinutes: number
+  localAiIdleUnload: boolean
   cloudAiEnabled: boolean
   cloudAiProvider: string
   cloudAiModel: string
@@ -88,6 +92,14 @@ export interface BrownSettings {
   privacyMode: PrivacyMode
   routingMode: RoutingMode
   visionRouting: VisionRoutingMode
+  // Dynamic Remote Node & Device Configuration
+  remoteNodeEnabled: boolean
+  remoteNodeId: string
+  remoteNodeName: string
+  remoteNodeUrl: string
+  remoteNodeAuthToken: string
+  remoteNodeAliases: string[]
+  remoteNodeTimeout: number
 }
 
 export const DEFAULT_SETTINGS: BrownSettings = {
@@ -110,10 +122,13 @@ export const DEFAULT_SETTINGS: BrownSettings = {
   localAiModel: 'qwen3-vl:2b',
   localAiVisionModel: 'qwen3-vl:2b',
   localAiUrl: 'http://error-boy.local:8765',
-
   localAiContextLength: 4096,
   localAiTemperature: 0.2,
   localAiKeepWarm: true,
+  localAiAutoStart: true,
+  localAiAutoWarm: true,
+  localAiKeepAliveMinutes: 15,
+  localAiIdleUnload: true,
   cloudAiEnabled: false,
   cloudAiProvider: 'gemini',
   cloudAiModel: 'gemini-2.0-flash',
@@ -121,7 +136,14 @@ export const DEFAULT_SETTINGS: BrownSettings = {
   cloudFallbackEnabled: false,
   privacyMode: 'local_only',
   routingMode: 'local_first',
-  visionRouting: 'auto'
+  visionRouting: 'auto',
+  remoteNodeEnabled: true,
+  remoteNodeId: 'remote_node',
+  remoteNodeName: 'Remote Node',
+  remoteNodeUrl: 'http://error-boy.local:8765',
+  remoteNodeAuthToken: '',
+  remoteNodeAliases: ['remote', 'secondary', 'linux', 'victus', 'error boy', 'error_boy'],
+  remoteNodeTimeout: 2.0
 }
 
 

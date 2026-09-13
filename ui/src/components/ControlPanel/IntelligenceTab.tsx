@@ -14,6 +14,15 @@ interface WakeDiagnosticData {
   missed_activations?: number
 }
 
+interface LocalAITelemetry {
+  state?: string
+  ready?: boolean
+  loaded?: boolean
+  model?: string
+  device?: string
+  reason?: string
+}
+
 export const IntelligenceTab: React.FC = () => {
   const { settings, updateSettings } = useSettings()
   const [diagnostic, setDiagnostic] = useState<WakeDiagnosticData>({
@@ -26,16 +35,56 @@ export const IntelligenceTab: React.FC = () => {
     missed_activations: 0
   })
 
-  // Listen for live wake diagnostic telemetry over WebSocket if connected
+  const [localAiTelemetry, setLocalAiTelemetry] = useState<LocalAITelemetry>({
+    state: 'READY',
+    ready: true,
+    loaded: true,
+    model: settings.localAiModel,
+    device: 'error_boy'
+  })
+
+  // Listen for live wake and local AI diagnostic telemetry over WebSocket if connected
   useEffect(() => {
     const handleCustomTelemetry = (e: any) => {
       if (e.detail) {
         setDiagnostic(prev => ({ ...prev, ...e.detail }))
       }
     }
+    const handleLocalAiTelemetry = (e: any) => {
+      if (e.detail) {
+        setLocalAiTelemetry(prev => ({ ...prev, ...e.detail }))
+      }
+    }
     window.addEventListener('brown-wake-diagnostic', handleCustomTelemetry)
-    return () => window.removeEventListener('brown-wake-diagnostic', handleCustomTelemetry)
+    window.addEventListener('brown-local-ai-state', handleLocalAiTelemetry)
+    return () => {
+      window.removeEventListener('brown-wake-diagnostic', handleCustomTelemetry)
+      window.removeEventListener('brown-local-ai-state', handleLocalAiTelemetry)
+    }
   }, [])
+
+  const aiBadge = (() => {
+    if (!settings.localAiEnabled) return { type: 'secondary' as const, label: 'Disabled' }
+    const st = localAiTelemetry.state || 'OFFLINE'
+    switch (st) {
+      case 'READY':
+        return { type: 'success' as const, label: localAiTelemetry.loaded ? 'READY (WARM)' : 'READY (STANDBY)' }
+      case 'MODEL_LOADING':
+        return { type: 'warning' as const, label: 'LOADING MODEL' }
+      case 'BUSY':
+        return { type: 'warning' as const, label: 'BUSY' }
+      case 'STARTING':
+        return { type: 'warning' as const, label: 'STARTING OLLAMA' }
+      case 'RESOURCE_LIMITED':
+        return { type: 'error' as const, label: 'VRAM/RAM LIMITED' }
+      case 'OLLAMA_UNAVAILABLE':
+        return { type: 'error' as const, label: 'OLLAMA DOWN' }
+      case 'MODEL_NOT_INSTALLED':
+        return { type: 'error' as const, label: 'MODEL NOT FOUND' }
+      default:
+        return { type: 'secondary' as const, label: st }
+    }
+  })()
 
   return (
     <div className="geist-tab-content" style={{ maxHeight: '420px', overflowY: 'auto', paddingRight: '4px' }}>
@@ -46,8 +95,8 @@ export const IntelligenceTab: React.FC = () => {
             <Cpu size={14} color="#7c3aed" />
             <Text small b style={{ color: '#ededed', margin: 0 }}>Local AI Engine (Level 2)</Text>
           </div>
-          <Badge type={settings.localAiEnabled ? 'success' : 'secondary'} scale={0.7}>
-            {settings.localAiEnabled ? 'Active' : 'Disabled'}
+          <Badge type={aiBadge.type} scale={0.7}>
+            {aiBadge.label}
           </Badge>
         </div>
         <Spacer h={0.4} />
@@ -56,7 +105,7 @@ export const IntelligenceTab: React.FC = () => {
           <div className="geist-toggle-info">
             <Text b small style={{ color: '#ededed', display: 'block' }}>Enable Local AI</Text>
             <Text small type="secondary" style={{ fontSize: '0.78rem', margin: 0 }}>
-              Run Qwen3.5-2B locally on Error Boy (Arch Linux / GTX 1650).
+              Run vision-language models locally on secondary device or accelerator node.
             </Text>
           </div>
           <Toggle
@@ -90,11 +139,10 @@ export const IntelligenceTab: React.FC = () => {
                 onChange={(e: any) => updateSettings({ localAiVisionModel: e.target.value })}
                 placeholder="e.g. qwen3-vl:2b"
               />
-
             </div>
             <div>
               <Text small type="secondary" style={{ fontSize: '0.76rem', display: 'block', marginBottom: 3 }}>
-                Runtime Endpoint (Error Boy Daemon)
+                Remote Agent Endpoint (Host URL)
               </Text>
               <Input
                 width="100%"
@@ -106,14 +154,39 @@ export const IntelligenceTab: React.FC = () => {
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 }}>
               <div>
+                <Text b small style={{ color: '#ededed', display: 'block' }}>Auto-Warm on Boot</Text>
+                <Text small type="secondary" style={{ fontSize: '0.75rem', margin: 0 }}>
+                  Preload model weights into accelerator memory on startup for zero-lag first response.
+                </Text>
+              </div>
+              <Toggle
+                checked={settings.localAiAutoWarm ?? true}
+                onChange={(e: any) => updateSettings({ localAiAutoWarm: e.target.checked })}
+              />
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 }}>
+              <div>
                 <Text b small style={{ color: '#ededed', display: 'block' }}>Keep Warm in VRAM</Text>
                 <Text small type="secondary" style={{ fontSize: '0.75rem', margin: 0 }}>
-                  Prevent reloading model weights between turns (fits within 4GB VRAM).
+                  Keep weights resident in memory across conversation turns.
                 </Text>
               </div>
               <Toggle
                 checked={settings.localAiKeepWarm}
                 onChange={(e: any) => updateSettings({ localAiKeepWarm: e.target.checked })}
+              />
+            </div>
+            <div style={{ marginTop: 2 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
+                <Text small style={{ color: '#ccc', fontSize: '0.76rem' }}>Idle Unload Window</Text>
+                <Text small b style={{ color: '#fff' }}>{settings.localAiKeepAliveMinutes || 15}m</Text>
+              </div>
+              <Slider
+                min={5}
+                max={60}
+                step={5}
+                value={settings.localAiKeepAliveMinutes || 15}
+                onChange={(val: any) => updateSettings({ localAiKeepAliveMinutes: Number(val) })}
               />
             </div>
           </div>

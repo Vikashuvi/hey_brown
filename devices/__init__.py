@@ -1,9 +1,15 @@
 try:
     from agents.base import DeviceAgent, DeviceCommandResult
-    from agents.paperball import PaperballAgent
-    from agents.error_boy import ErrorBoyAgent
+    from agents.local_agent import LocalAgent, PaperballAgent
+    from agents.remote_agent import RemoteAgent, ErrorBoyAgent
 
-    __all__ = ["DeviceAgent", "DeviceCommandResult", "PaperballAgent", "ErrorBoyAgent"]
+    __all__ = [
+        "DeviceAgent",
+        "DeviceCommandResult",
+        "LocalAgent",
+        "RemoteAgent",
+        "PaperballAgent",
+        "ErrorBoyAgent"
+    ]
 except ImportError:
-    # Allow running lightweight utilities (e.g. error_boy_server) without full agent dependencies
     __all__ = []

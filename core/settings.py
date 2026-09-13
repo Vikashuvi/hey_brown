@@ -36,6 +36,10 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
     "localAiContextLength": 4096,
     "localAiTemperature": 0.2,
     "localAiKeepWarm": True,
+    "localAiAutoStart": True,
+    "localAiAutoWarm": True,
+    "localAiKeepAliveMinutes": 15,
+    "localAiIdleUnload": True,
     "cloudAiEnabled": False,
     "cloudAiProvider": "gemini",
     "cloudAiModel": "gemini-2.0-flash",
@@ -44,6 +48,14 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
     "privacyMode": "local_only",      # "local_only" | "private" | "normal"
     "routingMode": "local_first",      # "local_first" | "deterministic_first" | "cloud_first"
     "visionRouting": "auto",          # "auto" | "local_only" | "cloud_only"
+    # Dynamic Remote Node & Device Configuration
+    "remoteNodeEnabled": True,
+    "remoteNodeId": "remote_node",
+    "remoteNodeName": "Remote Node",
+    "remoteNodeUrl": "http://error-boy.local:8765",
+    "remoteNodeAuthToken": "",
+    "remoteNodeAliases": ["remote", "secondary", "linux", "victus", "error boy", "error_boy"],
+    "remoteNodeTimeout": 2.0,
 }
 
 

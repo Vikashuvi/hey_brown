@@ -14,7 +14,7 @@ DEFAULT_DEVICES_CONFIG: Dict[str, Any] = {
         "is_local": True,
         "aliases": [
             "paperball", "mac", "macbook", "laptop", "local", "locally", "here",
-            "this machine", "this computer", "mac os", "macos"
+            "this machine", "this computer", "mac os", "macos", "host"
         ],
     },
     "error_boy": {
@@ -24,10 +24,10 @@ DEFAULT_DEVICES_CONFIG: Dict[str, Any] = {
         "aliases": [
             "error boy", "error_boy", "error", "linux laptop", "linux machine",
             "linux", "secondary laptop", "secondary machine", "secondary", "other laptop",
-            "other machine", "other computer", "arch linux", "arch", "victus", "pc", "forge"
+            "other machine", "other computer", "arch linux", "arch", "victus", "pc", "forge",
+            "remote node", "remote_node", "node", "remote"
         ],
     },
-
 }
 
 

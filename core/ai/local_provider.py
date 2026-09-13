@@ -81,13 +81,55 @@ class LocalAIProvider(AIProvider):
             info["error"] = str(e)
         return info
 
+    def get_health_state(self) -> Dict[str, Any]:
+        """Fetch real-time granular health state from Error Boy daemon."""
+        try:
+            resp = requests.get(f"{self.base_url}/ai/status?model={self.model}", timeout=1.0)
+            if resp.status_code == 200:
+                data = resp.json()
+                return data.get("data", data)
+        except Exception:
+            pass
+        return {
+            "state": "OFFLINE",
+            "ready": False,
+            "reason": "daemon_unreachable",
+            "device": "error_boy",
+            "model": self.model
+        }
+
+    def warm_model(self, keep_alive: Optional[str] = None) -> Dict[str, Any]:
+        """Warm model into VRAM on Error Boy."""
+        ka = keep_alive or f"{self.idle_unload_minutes}m"
+        try:
+            resp = requests.post(
+                f"{self.base_url}/ai/warm",
+                json={"model": self.model, "keep_alive": ka},
+                timeout=30.0
+            )
+            if resp.status_code == 200:
+                return resp.json()
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+        return {"success": False, "error": "warm_failed"}
+
     def unload(self) -> bool:
         """Explicitly request local runtime to free model memory."""
         try:
-            resp = requests.post(f"{self.base_url}/ai/unload", timeout=2.0)
+            resp = requests.post(f"{self.base_url}/ai/unload", json={"model": self.model}, timeout=5.0)
             return resp.status_code == 200
         except Exception:
             return False
+
+    def unload_model(self) -> Dict[str, Any]:
+        """Explicitly free model memory from Error Boy VRAM/RAM."""
+        try:
+            resp = requests.post(f"{self.base_url}/ai/unload", json={"model": self.model}, timeout=5.0)
+            if resp.status_code == 200:
+                return resp.json()
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+        return {"success": False, "error": "unload_failed"}
 
     async def text(self, prompt: str, system_prompt: Optional[str] = None, **kwargs) -> str:
         """Provider-agnostic text generation."""
@@ -203,6 +245,7 @@ class LocalAIProvider(AIProvider):
                 "temperature": temperature,
                 "max_tokens": max_tokens,
                 "tools": tools_dicts,
+                "keep_alive": f"{self.idle_unload_minutes}m" if self.keep_warm else 0,
             }
 
             url = f"{self.base_url}/ai/chat"

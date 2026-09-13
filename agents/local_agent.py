@@ -1,24 +1,38 @@
+"""Local Host Device Agent for Brown.
+Provides strictly typed, validated capabilities for controlling the host operating system.
+Zero external dependencies; enterprise-grade open-source design.
+"""
+
 import os
 import re
 import subprocess
 import urllib.parse
+from typing import Optional
 from agents.base import DeviceAgent, DeviceCommandResult
 
 
-class PaperballAgent(DeviceAgent):
-    """Local macOS device agent for Paperball.
-    Provides strictly typed, validated capabilities.
+class LocalAgent(DeviceAgent):
+    """Local host operating system device agent.
+    Safely executes validated desktop capabilities without arbitrary shell injection.
     """
 
     SAFE_APP_PATTERN = re.compile(r"^[a-zA-Z0-9\s\-_\.]+$")
 
+    def __init__(self, device_id: str = "host", display_name: str = "Local Host"):
+        self._device_id = device_id
+        self._display_name = display_name
+
     @property
     def name(self) -> str:
-        return "paperball"
+        return self._device_id
+
+    @property
+    def display_name(self) -> str:
+        return self._display_name
 
     @property
     def is_online(self) -> bool:
-        # Paperball is the local machine, so it is always online if Brown is running
+        # Local host agent is always online when the process runs
         return True
 
     def open_application(self, app_name: str) -> DeviceCommandResult:
@@ -36,13 +50,13 @@ class PaperballAgent(DeviceAgent):
             if proc.returncode == 0:
                 return DeviceCommandResult(
                     success=True,
-                    message=f"Opened {app_name} on Paperball."
+                    message=f"Opened {app_name} on {self._display_name}."
                 )
             else:
                 err = proc.stderr.strip() or proc.stdout.strip() or f"Exit code {proc.returncode}"
                 return DeviceCommandResult(
                     success=False,
-                    message=f"Could not open {app_name} on Paperball: {err}"
+                    message=f"Could not open {app_name} on {self._display_name}: {err}"
                 )
         except Exception as e:
             return DeviceCommandResult(
@@ -65,7 +79,7 @@ class PaperballAgent(DeviceAgent):
             if proc.returncode == 0:
                 return DeviceCommandResult(
                     success=True,
-                    message=f"Closed {app_name} on Paperball."
+                    message=f"Closed {app_name} on {self._display_name}."
                 )
             else:
                 return DeviceCommandResult(
@@ -95,7 +109,7 @@ class PaperballAgent(DeviceAgent):
             if proc.returncode == 0:
                 return DeviceCommandResult(
                     success=True,
-                    message=f"Opened {url} in browser on Paperball."
+                    message=f"Opened {url} in browser on {self._display_name}."
                 )
             else:
                 return DeviceCommandResult(
@@ -110,17 +124,16 @@ class PaperballAgent(DeviceAgent):
 
     def get_system_status(self) -> DeviceCommandResult:
         try:
-            # Load averages
             load1, load5, load15 = os.getloadavg()
             return DeviceCommandResult(
                 success=True,
-                message=f"Paperball is running normally. Load averages: {load1:.2f}, {load5:.2f}, {load15:.2f}.",
+                message=f"{self._display_name} is running normally. Load averages: {load1:.2f}, {load5:.2f}, {load15:.2f}.",
                 data={"load1": load1, "load5": load5, "load15": load15}
             )
         except Exception as e:
             return DeviceCommandResult(
                 success=False,
-                message=f"Failed to query Paperball system status: {str(e)}"
+                message=f"Failed to query {self._display_name} system status: {str(e)}"
             )
 
     def get_running_apps(self) -> DeviceCommandResult:
@@ -132,26 +145,26 @@ class PaperballAgent(DeviceAgent):
                 apps = [a.strip() for a in raw_apps if a.strip()]
                 return DeviceCommandResult(
                     success=True,
-                    message=f"Paperball is currently running: {', '.join(apps)}.",
+                    message=f"{self._display_name} is currently running: {', '.join(apps)}.",
                     data={"running_apps": apps}
                 )
             else:
                 return DeviceCommandResult(
                     success=False,
-                    message=f"Failed to query running apps on Paperball: {proc.stderr.strip()}"
+                    message=f"Failed to query running apps on {self._display_name}: {proc.stderr.strip()}"
                 )
         except Exception as e:
             return DeviceCommandResult(
                 success=False,
-                message=f"Error querying running apps on Paperball: {str(e)}"
+                message=f"Error querying running apps on {self._display_name}: {str(e)}"
             )
 
     def get_device_capabilities(self) -> DeviceCommandResult:
         return DeviceCommandResult(
             success=True,
-            message="Paperball device capabilities retrieved.",
+            message=f"{self._display_name} device capabilities retrieved.",
             data={
-                "device": "paperball",
+                "device": self._device_id,
                 "os": "macOS",
                 "capabilities": [
                     "get_device_status",
@@ -164,3 +177,9 @@ class PaperballAgent(DeviceAgent):
                 "version": "1.0.0"
             }
         )
+
+
+# Backward compatibility alias
+class PaperballAgent(LocalAgent):
+    def __init__(self, device_id: str = "paperball", display_name: str = "Paperball"):
+        super().__init__(device_id=device_id, display_name=display_name)

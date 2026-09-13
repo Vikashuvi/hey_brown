@@ -39,6 +39,8 @@ class BrownOrchestrator:
         event_bridge: Optional[Any] = None,
         ai_router: Optional[AIRouter] = None,
         device_resolver: Optional[DeviceResolver] = None,
+        auto_warm: bool = True,
+        auto_start: bool = True,
     ):
         self.audio_input = audio_input
         self.audio_output = audio_output
@@ -49,6 +51,8 @@ class BrownOrchestrator:
         self.tool_registry = tool_registry
         self.greeting = greeting
         self.event_bridge = event_bridge
+        self.auto_warm = auto_warm
+        self.auto_start = auto_start
 
         self.barge_in_enabled = True
         self.barge_in_grace_period_sec = 1.2  # Ignore mic for 1.2s of playback to prevent speaker echo
@@ -68,6 +72,8 @@ class BrownOrchestrator:
 
         self._running = False
         self._loop_thread: Optional[threading.Thread] = None
+        self._lifecycle_thread: Optional[threading.Thread] = None
+        self._last_ai_state: Optional[str] = None
 
         # Buffers & Timing
         self._speech_buffer: List[np.ndarray] = []
@@ -124,6 +130,8 @@ class BrownOrchestrator:
         self.wake_provider.start()
         self._loop_thread = threading.Thread(target=self._run_loop, daemon=True)
         self._loop_thread.start()
+        self._lifecycle_thread = threading.Thread(target=self._run_local_ai_lifecycle, daemon=True)
+        self._lifecycle_thread.start()
         print("[Brown] Orchestrator started. Brown is SLEEPING (listening for wake word).")
 
     def stop(self):
@@ -136,7 +144,48 @@ class BrownOrchestrator:
             self.event_bridge.stop()
         if self._loop_thread and self._loop_thread.is_alive():
             self._loop_thread.join(timeout=2.0)
+        if self._lifecycle_thread and self._lifecycle_thread.is_alive():
+            self._lifecycle_thread.join(timeout=1.0)
         print("[Brown] Orchestrator stopped.")
+
+    def _run_local_ai_lifecycle(self):
+        """Background thread monitoring Error Boy AI status, auto-warming, and emitting telemetry."""
+        local_provider = getattr(self.ai_router, "local_provider", None)
+        if not local_provider or not hasattr(local_provider, "get_health_state"):
+            return
+
+        has_warmed = False
+        while self._running:
+            try:
+                status = local_provider.get_health_state()
+                current_state = status.get("state", "OFFLINE")
+
+                if current_state != self._last_ai_state:
+                    self._last_ai_state = current_state
+                    if self.event_bridge:
+                        self.event_bridge.broadcast("local_ai_state_changed", status)
+
+                # Auto-warm model if Error Boy is ready and auto_warm is enabled
+                if self.auto_warm and not has_warmed and current_state == "READY":
+                    if not status.get("loaded", False):
+                        print(f"[Brown] Auto-warming local model {local_provider.model} on Error Boy...")
+                        warm_res = local_provider.warm_model()
+                        if warm_res.get("success"):
+                            has_warmed = True
+                            print(f"[Brown] Local model {local_provider.model} warmed and ready in memory.")
+                            new_status = local_provider.get_health_state()
+                            if self.event_bridge:
+                                self.event_bridge.broadcast("local_ai_state_changed", new_status)
+                    else:
+                        has_warmed = True
+            except Exception:
+                pass
+
+            # Non-blocking periodic interval
+            for _ in range(10):
+                if not self._running:
+                    break
+                time.sleep(0.5)
 
     def trigger_wake(self, reason: str = "manual_trigger"):
         """Programmatic trigger for wake word (useful for tests or buttons)."""

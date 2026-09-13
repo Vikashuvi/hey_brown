@@ -1,27 +1,39 @@
+"""Remote Node Device Agent for Brown.
+Communicates strictly via authenticated HTTP / JSON REST API with remote worker/inference nodes.
+Provides typed capabilities with short, bounded timeouts so Brown never freezes when a remote node is offline.
+"""
+
 import requests
 from typing import Optional, Dict, Any
 from agents.base import DeviceAgent, DeviceCommandResult
 
 
-class ErrorBoyAgent(DeviceAgent):
-    """Remote Linux device agent client for Error Boy (Arch Linux).
-    Communicates strictly via authenticated HTTP / JSON REST API.
-    Provides typed capabilities with short timeouts (default 2.0s) so Brown
-    never freezes when Error Boy is offline or unreachable.
+class RemoteAgent(DeviceAgent):
+    """Remote accelerator or worker node device agent client.
+    Issues typed capability requests over HTTP REST API to the node daemon.
     """
 
-    def __init__(self, base_url: str = "http://error-boy.local:8765", auth_token: Optional[str] = None, timeout: float = 2.0):
+    def __init__(
+        self,
+        base_url: str = "http://localhost:8765",
+        device_id: str = "remote_node",
+        display_name: str = "Remote Node",
+        auth_token: Optional[str] = None,
+        timeout: float = 2.0,
+    ):
         self.base_url = base_url.rstrip("/")
+        self.device_id = device_id
+        self.display_name = display_name
         self.auth_token = auth_token
         self.timeout = timeout
 
     @property
     def name(self) -> str:
-        return "error_boy"
+        return self.device_id
 
     @property
     def is_online(self) -> bool:
-        """Check whether Error Boy is reachable on the network."""
+        """Check whether the remote node is reachable on the network."""
         try:
             headers = {}
             if self.auth_token:
@@ -32,7 +44,7 @@ class ErrorBoyAgent(DeviceAgent):
             return False
 
     def _send_command(self, endpoint: str, payload: Optional[Dict[str, Any]] = None, method: str = "POST") -> DeviceCommandResult:
-        """Issue an authenticated, timeout-bounded HTTP request to Error Boy."""
+        """Issue an authenticated, timeout-bounded HTTP request to the remote node."""
         try:
             headers = {"Content-Type": "application/json"}
             if self.auth_token:
@@ -49,28 +61,28 @@ class ErrorBoyAgent(DeviceAgent):
             except Exception:
                 return DeviceCommandResult(
                     success=resp.status_code == 200,
-                    message=f"Received status {resp.status_code} from Error Boy."
+                    message=f"Received status {resp.status_code} from {self.display_name}."
                 )
 
             return DeviceCommandResult(
                 success=data.get("success", False),
-                message=data.get("message", "Error Boy executed command."),
+                message=data.get("message", f"{self.display_name} executed command."),
                 data=data.get("data")
             )
         except requests.exceptions.ConnectionError:
             return DeviceCommandResult(
                 success=False,
-                message="Error Boy is currently offline or unreachable on the network."
+                message=f"{self.display_name} is currently offline or unreachable on the network."
             )
         except requests.exceptions.Timeout:
             return DeviceCommandResult(
                 success=False,
-                message="Request to Error Boy timed out."
+                message=f"Request to {self.display_name} timed out."
             )
         except Exception as e:
             return DeviceCommandResult(
                 success=False,
-                message=f"Communication error with Error Boy: {str(e)}"
+                message=f"Communication error with {self.display_name}: {str(e)}"
             )
 
     # 1. Device Status
@@ -100,14 +112,43 @@ class ErrorBoyAgent(DeviceAgent):
     def get_device_capabilities(self) -> DeviceCommandResult:
         return self._send_command("capabilities", method="GET")
 
-    # 7. AI Service Endpoints
-    def get_ai_status(self) -> DeviceCommandResult:
-        return self._send_command("ai/status", method="GET")
+    # 7. AI Health Status & Telemetry
+    def get_ai_status(self, model: Optional[str] = None) -> DeviceCommandResult:
+        endpoint = f"ai/status?model={model}" if model else "ai/status"
+        return self._send_command(endpoint, method="GET")
 
-    def ai_chat(self, messages: list, tools: Optional[list] = None, model: str = "qwen3.5-2b") -> DeviceCommandResult:
-        payload = {"messages": messages, "tools": tools or [], "model": model}
+    # 8. Available Models Discovery
+    def get_ai_models(self) -> DeviceCommandResult:
+        return self._send_command("ai/models", method="GET")
+
+    # 9. Preload / Warm Model
+    def ai_warm(self, model: str, keep_alive: str = "15m") -> DeviceCommandResult:
+        return self._send_command("ai/warm", {"model": model, "keep_alive": keep_alive}, method="POST")
+
+    # 10. AI Chat / Inference
+    def ai_chat(self, messages: list, model: str = "qwen3-vl:2b", temperature: float = 0.2, max_tokens: int = 512, tools: Optional[list] = None) -> DeviceCommandResult:
+        payload = {
+            "messages": messages,
+            "model": model,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+            "tools": tools or []
+        }
         return self._send_command("ai/chat", payload, method="POST")
 
-    def ai_unload(self) -> DeviceCommandResult:
-        return self._send_command("ai/unload", method="POST")
+    # 11. Unload Model from Memory
+    def ai_unload(self, model: Optional[str] = None) -> DeviceCommandResult:
+        payload = {"model": model} if model else {}
+        return self._send_command("ai/unload", payload, method="POST")
 
+
+# Backward compatibility alias
+class ErrorBoyAgent(RemoteAgent):
+    def __init__(
+        self,
+        base_url: str = "http://error-boy.local:8765",
+        timeout: float = 2.0,
+        auth_token: Optional[str] = None,
+        device_id: str = "error_boy"
+    ):
+        super().__init__(base_url=base_url, timeout=timeout, auth_token=auth_token, device_id=device_id)

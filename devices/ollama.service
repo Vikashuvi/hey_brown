@@ -1,0 +1,14 @@
+[Unit]
+Description=Ollama AI Service (User Level)
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/ollama serve
+Restart=always
+RestartSec=3
+Environment=OLLAMA_HOST=127.0.0.1:11434
+Environment=OLLAMA_ORIGINS=*
+
+[Install]
+WantedBy=default.target

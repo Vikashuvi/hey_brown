@@ -1,7 +1,7 @@
 import pytest
 from unittest.mock import patch, MagicMock
-from devices.paperball import PaperballAgent
-from devices.error_boy import ErrorBoyAgent
+from agents.local_agent import LocalAgent, PaperballAgent
+from agents.remote_agent import RemoteAgent, ErrorBoyAgent
 
 
 def test_paperball_agent_security_validation():

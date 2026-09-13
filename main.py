@@ -13,8 +13,8 @@ from core.ai.cloud_provider import CloudAIProvider
 from core.ai.router import AIRouter
 from tools.base import ToolRegistry
 from tools.system_tools import OpenAppTool, CloseAppTool, OpenUrlTool, SystemStatusTool, GetRunningAppsTool, GetCapabilitiesTool
-from devices.paperball import PaperballAgent
-from devices.error_boy import ErrorBoyAgent
+from agents.local_agent import LocalAgent
+from agents.remote_agent import RemoteAgent
 
 from voice.audio.stream import MicrophoneStream
 from voice.audio.player import InterruptibleAudioPlayer
@@ -49,16 +49,22 @@ def load_config(path: str = "config/default.yaml") -> Dict[str, Any]:
 
 def build_orchestrator(config: Dict[str, Any]) -> BrownOrchestrator:
     # 1. Device agents
-    paperball = PaperballAgent()
-    eb_cfg = config.get("devices", {}).get("error_boy", {})
-    eb_url = os.environ.get("ERROR_BOY_BASE_URL") or eb_cfg.get("base_url", "http://error-boy.local:8765")
-    error_boy = ErrorBoyAgent(
-        base_url=eb_url,
-        timeout=eb_cfg.get("timeout", 2.0)
+    local_agent = LocalAgent()
+    node_cfg = config.get("devices", {}).get("remote_node", config.get("devices", {}).get("error_boy", {}))
+    node_url = (
+        os.environ.get("BROWN_REMOTE_URL")
+        or os.environ.get("ERROR_BOY_BASE_URL")
+        or node_cfg.get("base_url", "http://error-boy.local:8765")
+    )
+    remote_agent = RemoteAgent(
+        base_url=node_url,
+        timeout=node_cfg.get("timeout", 2.0)
     )
     devices = {
-        "paperball": paperball,
-        "error_boy": error_boy
+        "host": local_agent,
+        "remote_node": remote_agent,
+        "paperball": local_agent,
+        "error_boy": remote_agent,
     }
 
     # 2. Tool registry
@@ -103,7 +109,7 @@ def build_orchestrator(config: Dict[str, Any]) -> BrownOrchestrator:
 
     local_provider = LocalAIProvider(
         base_url=local_ai_cfg.get("base_url", eb_url),
-        model=local_ai_cfg.get("model", "qwen3.5-2b"),
+        model=local_ai_cfg.get("model", "qwen3-vl:2b"),
         keep_warm=local_ai_cfg.get("keep_warm", True),
         idle_unload_minutes=local_ai_cfg.get("idle_unload_minutes", 15),
         device_resolver=device_resolver
@@ -171,7 +177,9 @@ def build_orchestrator(config: Dict[str, Any]) -> BrownOrchestrator:
         greeting=conv_cfg.get("greeting", "Yeah, I'm here. What can I do for you?"),
         event_bridge=event_bridge,
         ai_router=ai_router,
-        device_resolver=device_resolver
+        device_resolver=device_resolver,
+        auto_warm=local_ai_cfg.get("auto_warm", True),
+        auto_start=local_ai_cfg.get("auto_start", True),
     )
     orchestrator.barge_in_enabled = conv_cfg.get("barge_in_enabled", True)
     orchestrator.barge_in_grace_period_sec = conv_cfg.get("barge_in_grace_period_sec", 1.2)
