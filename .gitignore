@@ -50,5 +50,14 @@ models/
 config/local.yaml
 config/settings.json
 
+# Local Databases & Persistent Memory Stores
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+config/memory.db
+
 /tmp
+
 

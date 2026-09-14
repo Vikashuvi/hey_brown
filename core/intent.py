@@ -131,7 +131,11 @@ class DeterministicIntentRouter:
         "x": "https://x.com",
     }
 
-    STOP_WORDS = {"stop", "stop speaking", "cancel", "quiet", "shut up", "hold on", "wait", "actually stop"}
+    STOP_WORDS = {
+        "stop", "stop speaking", "stop talking", "stop it", "just stop", "please stop", "stop now",
+        "cancel", "quiet", "be quiet", "shut up", "hold on", "wait", "actually stop",
+        "silence", "hush", "pause", "abort", "halt", "never mind", "nevermind", "exit", "end"
+    }
 
     APP_MAP = {
         "safari": "Safari",
@@ -160,6 +164,9 @@ class DeterministicIntentRouter:
     def __init__(self, device_resolver: Optional[DeviceResolver] = None):
         self.device_resolver = device_resolver or DeviceResolver()
         self.RE_TRAILING_PUNCT = re.compile(r"[?!.,]+$")
+        self.RE_PUNCT = re.compile(r"[\.,!?\-\'\"]+")
+        self.RE_LEAD_WAKE = re.compile(r"^(hey\s+brown|brown|yo\s+brown|ok\s+brown|okay\s+brown|please|just)\s+", re.IGNORECASE)
+        self.RE_TRAIL_STOP = re.compile(r"\s+(please|brown|now|it)$", re.IGNORECASE)
         self._recompile_patterns()
 
     def _recompile_patterns(self):
@@ -218,11 +225,21 @@ class DeterministicIntentRouter:
         All natural language understanding, entity resolution, follow-ups,
         and general commands pass through to the conversational brain.
         """
-        clean_text = text.lower().strip()
-        clean_text = self.RE_TRAILING_PUNCT.sub("", clean_text).strip()
+        clean_text = self.RE_PUNCT.sub(" ", text.lower()).strip()
+        clean_text = re.sub(r"\s+", " ", clean_text)
 
-        # Emergency stop / interruption
+        # 1. Direct match
         if clean_text in self.STOP_WORDS:
+            return RoutedAction(action_type="stop", direct_response="Stopped.")
+
+        # 2. Strip leading wake word / filler (e.g. "hey brown stop", "brown stop")
+        stripped = self.RE_LEAD_WAKE.sub("", clean_text).strip()
+        if stripped in self.STOP_WORDS:
+            return RoutedAction(action_type="stop", direct_response="Stopped.")
+
+        # 3. Strip trailing filler (e.g. "stop please", "stop it")
+        stripped2 = self.RE_TRAIL_STOP.sub("", stripped).strip()
+        if stripped2 in self.STOP_WORDS:
             return RoutedAction(action_type="stop", direct_response="Stopped.")
 
         return None

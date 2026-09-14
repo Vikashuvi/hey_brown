@@ -240,12 +240,6 @@ export function useBrownState(wsUrl: string = 'ws://127.0.0.1:8766'): UseBrownSt
         if (msg.data.message) {
           setStatusMessage(msg.data.message)
         }
-        if (msg.data.data && typeof msg.data.data === 'object') {
-          setStructuredInfo({
-            title: msg.data.tool,
-            details: msg.data.data
-          })
-        }
         break
       }
 

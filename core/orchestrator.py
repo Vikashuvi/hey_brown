@@ -15,6 +15,9 @@ from voice.wake.base import WakeWordProvider
 from voice.vad.base import VADProvider
 from voice.stt.base import STTProvider
 from voice.tts.base import TTSProvider
+from voice.tts.speech_normalizer import SpeechNormalizer
+from voice.audio.barge_in import AcousticBargeInDetector
+from voice.audio.clause_buffer import ClauseBuffer
 
 
 class BrownOrchestrator:
@@ -35,7 +38,7 @@ class BrownOrchestrator:
         conversation_timeout: float = 8.0,
         min_speech_duration_ms: int = 250,
         min_silence_duration_ms: int = 700,
-        greeting: str = "Yeah, I'm here. What can I do for you?",
+        greeting: str = "Yeah?",
         event_bridge: Optional[Any] = None,
         brain: Optional[Any] = None,
         ai_router: Optional[AIRouter] = None,
@@ -56,8 +59,13 @@ class BrownOrchestrator:
         self.auto_start = auto_start
 
         self.barge_in_enabled = True
-        self.barge_in_grace_period_sec = 1.2  # Ignore mic for 1.2s of playback to prevent speaker echo
-        self.barge_in_min_frames = 3          # Require sustained speech to interrupt
+        self.barge_in_grace_period_sec = 0.0  # Dynamic acoustic echo rejection replaces rigid delay
+        self.barge_in_min_frames = 2          # Require ~160ms sustained speech to avoid click triggers
+        self.speech_normalizer = SpeechNormalizer()
+        self.barge_in_detector = AcousticBargeInDetector(min_interruption_frames=self.barge_in_min_frames)
+        self.clause_buffer = ClauseBuffer(min_clause_words=3, max_clause_words=20)
+        self._turn_cancel_event = threading.Event()
+        self._turn_lock = threading.Lock()
 
         self.device_resolver = device_resolver or DeviceResolver()
         self.brain = brain
@@ -120,8 +128,44 @@ class BrownOrchestrator:
             if hasattr(self.audio_input, "clear"):
                 self.audio_input.clear()
             if old_state == AssistantState.SPEAKING:
-                # 350ms acoustic cooldown to let speaker resonance completely dissipate in room
-                self._ignore_mic_until = time.time() + 0.35
+                # Acoustic cooldown only applies when speech ends naturally, not during user barge-in
+                if not self._turn_cancel_event.is_set():
+                    self._ignore_mic_until = time.time() + 0.35
+                else:
+                    self._ignore_mic_until = 0.0
+
+    def interrupt_current_turn(self, reason: str = "barge_in") -> bool:
+        """Centralized cancellation controller that aborts active generation,
+        TTS synthesis, sounddevice audio playback, and resets turn state.
+        """
+        with self._turn_lock:
+            # 1. Signal cancellation event to LLM token streaming and background tasks
+            self._turn_cancel_event.set()
+
+            # 2. Abort audio player hardware stream and clear queued chunks
+            was_playing = self.audio_output.interrupt()
+
+            # 3. Reset streaming clause buffer and barge-in detector
+            self.clause_buffer.reset()
+            self.barge_in_detector.reset()
+
+            # 4. Don't ignore mic on barge-in
+            self._ignore_mic_until = 0.0
+
+            # 5. Transition state machine to LISTENING to immediately capture user speech
+            if self.state_machine.current_state in (
+                AssistantState.SPEAKING,
+                AssistantState.THINKING,
+                AssistantState.ACTIVE_CONVERSATION
+            ):
+                self.state_machine.transition_to(AssistantState.LISTENING, reason=reason)
+
+            # 6. Emit event bridge notifications
+            if self.event_bridge:
+                self.event_bridge.broadcast("interrupted", {"reason": reason})
+                self.event_bridge.broadcast("tts_speaking", {"speaking": False, "interrupted": True})
+
+            return was_playing
 
     def start(self):
         """Start orchestrator and audio stream."""
@@ -192,7 +236,10 @@ class BrownOrchestrator:
     def trigger_wake(self, reason: str = "manual_trigger"):
         """Programmatic trigger for wake word (useful for tests or buttons)."""
         self.state_machine.transition_to(AssistantState.WAKE_DETECTED, reason=reason)
-        self._speak(self.greeting, next_state=AssistantState.LISTENING)
+        wake_greeting = self.greeting
+        if self.brain and hasattr(self.brain, "behavior_layer") and self.brain.behavior_layer:
+            wake_greeting = self.brain.behavior_layer.get_dynamic_wake_greeting()
+        self._speak(wake_greeting, next_state=AssistantState.LISTENING)
 
     def trigger_text_command(self, text: str):
         """Direct text injection for tests and non-voice CLI mode."""
@@ -218,7 +265,10 @@ class BrownOrchestrator:
                 if detected:
                     print(f"[Brown] Wake word '{detected}' detected!")
                     self.state_machine.transition_to(AssistantState.WAKE_DETECTED, reason=f"wake:{detected}")
-                    self._speak(self.greeting, next_state=AssistantState.LISTENING)
+                    wake_greeting = self.greeting
+                    if self.brain and hasattr(self.brain, "behavior_layer") and self.brain.behavior_layer:
+                        wake_greeting = self.brain.behavior_layer.get_dynamic_wake_greeting()
+                    self._speak(wake_greeting, next_state=AssistantState.LISTENING)
 
             # 2. LISTENING: Monitor user speech via VAD
             elif state in (AssistantState.LISTENING, AssistantState.ACTIVE_CONVERSATION):
@@ -259,32 +309,51 @@ class BrownOrchestrator:
                                 self._speech_frame_count = 0
                                 self._silence_frame_count = 0
 
-            # 3. SPEAKING: TTS is playing, check for barge-in with echo protection
+            # 3. SPEAKING: TTS is playing, check for barge-in with dynamic acoustic echo protection
             elif state == AssistantState.SPEAKING:
                 if self.barge_in_enabled:
                     now = time.time()
-                    # Only check barge-in after the grace period has passed (prevents speaker echo)
                     if now - self._speaking_start_time >= self.barge_in_grace_period_sec:
                         is_speech = self.vad_provider.is_speech(chunk, sample_rate=self.audio_input.sample_rate)
-                        if is_speech:
-                            self._barge_in_frame_count += 1
-                            # Require sustained speech (at least min_frames) to trigger interruption
-                            if self._barge_in_frame_count >= self.barge_in_min_frames:
-                                print("[Brown] Barge-in speech detected! Halting TTS output immediately.")
-                                self.audio_output.interrupt()
-                                self.state_machine.transition_to(AssistantState.LISTENING, reason="barge_in_interruption")
-                                self._speech_buffer.append(chunk)
-                                self._has_speech_started = True
-                                self._speech_frame_count = 1
-                                self._silence_frame_count = 0
-                        else:
-                            self._barge_in_frame_count = max(0, self._barge_in_frame_count - 1)
+                        self.barge_in_detector.min_interruption_frames = self.barge_in_min_frames
+                        self.barge_in_detector.set_playback_active(self.audio_output.is_playing)
+                        playback_rms = getattr(self.audio_output, "current_playback_rms", 0.0)
+                        interrupted = self.barge_in_detector.evaluate_frame(
+                            chunk,
+                            is_vad_speech=is_speech,
+                            playback_rms=playback_rms
+                        )
+                        if interrupted:
+                            print("[Brown] Acoustic barge-in detected! Halting TTS output immediately.")
+                            self.interrupt_current_turn(reason="barge_in_interruption")
+                            self._speech_buffer.append(chunk)
+                            self._has_speech_started = True
+                            self._speech_frame_count = 1
+                            self._silence_frame_count = 0
+
+            # 4. THINKING: Monitor for speech interruption during AI generation
+            elif state == AssistantState.THINKING:
+                if self.barge_in_enabled:
+                    is_speech = self.vad_provider.is_speech(chunk, sample_rate=self.audio_input.sample_rate)
+                    if is_speech:
+                        self._speech_frame_count += 1
+                        if self._speech_frame_count >= self.min_speech_frames:
+                            print("[Brown] User interrupted while thinking! Cancelling pending turn.")
+                            self.interrupt_current_turn(reason="interrupted_during_thinking")
+                            self._speech_buffer.append(chunk)
+                            self._has_speech_started = True
+                            self._silence_frame_count = 0
+                    else:
+                        self._speech_frame_count = max(0, self._speech_frame_count - 1)
 
     def _handle_transcription_and_action(self, audio_data: np.ndarray):
-        """Transcribe speech and execute routed action."""
+        """Transcribe speech and execute routed action with streaming clause synthesis and T0-T6 telemetry."""
+        t_0 = time.time()  # T0: Audio chunk complete / transcription start
+        self._turn_cancel_event.clear()
         try:
             print("[Brown] Transcribing audio with local STT...")
             text = self.stt_provider.transcribe(audio_data, sample_rate=self.audio_input.sample_rate)
+            t_1 = time.time()  # T1: Transcription ready
             print(f"[Brown] User said: \"{text}\"")
             if self.event_bridge:
                 self.event_bridge.broadcast("transcript", {"text": text, "is_final": True})
@@ -294,7 +363,31 @@ class BrownOrchestrator:
                 self.state_machine.transition_to(AssistantState.ACTIVE_CONVERSATION, reason="empty_transcript")
                 return
 
+            if self._turn_cancel_event.is_set():
+                print("[Brown] Turn cancelled after transcription.")
+                return
+
+            # Check Level 1 Deterministic Fast Path (e.g. stop / pause / cancel)
+            fast_action = self.intent_router.match_fast_path(text)
+            if fast_action and fast_action.action_type == "stop":
+                print(f"[Brown] Stop command '{text}' received. Silencing immediately.")
+                if self.event_bridge:
+                    self.event_bridge.broadcast("reaction", {"mood": "neutral", "message": "Stopped."})
+                self.audio_output.interrupt()
+                self.state_machine.transition_to(AssistantState.ACTIVE_CONVERSATION, reason="user_stop_command")
+                return
+
+            # Streaming via Conversational Brain if available
+            if self.brain and hasattr(self.brain, "stream_query") and hasattr(self.audio_output, "queue_clause"):
+                self._stream_brain_response(text, t_0, t_1)
+                return
+
+            # Non-streaming fallback
             response_text = self._process_command(text)
+            if self._turn_cancel_event.is_set():
+                print("[Brown] Turn cancelled after command processing.")
+                return
+
             if response_text:
                 self._speak(response_text, next_state=AssistantState.ACTIVE_CONVERSATION)
             else:
@@ -304,7 +397,108 @@ class BrownOrchestrator:
             print(f"[Brown] Error during transcription/action: {e}")
             if self.event_bridge:
                 self.event_bridge.broadcast("error", {"message": str(e)})
-            self._speak("Sorry, I encountered an issue processing that.", next_state=AssistantState.ACTIVE_CONVERSATION)
+            if not self._turn_cancel_event.is_set():
+                self._speak("Sorry, I encountered an issue processing that.", next_state=AssistantState.ACTIVE_CONVERSATION)
+
+    def _stream_brain_response(self, text: str, t_0: float, t_1: float):
+        """Execute Brain query with token streaming, clause segmentation, TTS normalization, and T0-T6 logging."""
+        t_2 = time.time()  # T2: Intent/LLM query dispatched
+        t_3 = None         # T3: First token received
+        t_4 = None         # T4: First clause completed
+        t_5 = None         # T5: First audio chunk synthesized
+        t_6 = None         # T6: Playback started
+
+        if self.event_bridge:
+            self.event_bridge.broadcast("state_change", {"state": "THINKING", "description": "Processing..."})
+
+        self.clause_buffer.reset()
+        stream_started = False
+
+        def _on_first_audio():
+            nonlocal t_6
+            t_6 = time.time()
+            if self.event_bridge:
+                self.event_bridge.broadcast("tts_speaking", {"speaking": True})
+            stt_lat = round((t_1 - t_0) * 1000, 1)
+            ttft = round(((t_3 or t_2) - t_2) * 1000, 1)
+            clause_lat = round(((t_4 or t_2) - t_2) * 1000, 1)
+            tts_lat = round(((t_5 or t_4 or t_2) - (t_4 or t_2)) * 1000, 1)
+            ttfa = round((t_6 - t_0) * 1000, 1)
+            print(f"[Brown Latency] T0->T6 Total TTFA: {ttfa}ms (STT: {stt_lat}ms, TTFT: {ttft}ms, Clause: {clause_lat}ms, TTS: {tts_lat}ms)")
+
+        def _on_stream_complete():
+            if self.event_bridge:
+                self.event_bridge.broadcast("tts_speaking", {"speaking": False})
+            if self.state_machine.current_state == AssistantState.SPEAKING:
+                self.state_machine.transition_to(AssistantState.ACTIVE_CONVERSATION, reason="stream_playback_finished")
+
+        for token in self.brain.stream_query(text, cancel_event=self._turn_cancel_event):
+            if self._turn_cancel_event.is_set():
+                print("[Brown] Stream aborted mid-generation.")
+                self.audio_output.interrupt()
+                return
+
+            if t_3 is None:
+                t_3 = time.time()
+
+            clauses = self.clause_buffer.append(token)
+            for clause in clauses:
+                if self._turn_cancel_event.is_set():
+                    self.audio_output.interrupt()
+                    return
+
+                if t_4 is None:
+                    t_4 = time.time()
+
+                norm_clause = self.speech_normalizer.normalize(clause)
+                if not norm_clause.strip():
+                    continue
+
+                try:
+                    audio_data, sr = self.tts_provider.synthesize(norm_clause)
+                    if self._turn_cancel_event.is_set():
+                        self.audio_output.interrupt()
+                        return
+
+                    if t_5 is None:
+                        t_5 = time.time()
+
+                    if not stream_started:
+                        stream_started = True
+                        self.state_machine.transition_to(AssistantState.SPEAKING, reason="speaking_stream")
+                        self.audio_output.play_clause_stream(
+                            on_first_audio=_on_first_audio,
+                            on_complete=_on_stream_complete
+                        )
+
+                    self.audio_output.queue_clause(audio_data, sr)
+                except Exception as synth_err:
+                    print(f"[Brown] Clause synthesis error: {synth_err}")
+
+        # Flush any remaining tokens in buffer
+        if not self._turn_cancel_event.is_set():
+            remainder = self.clause_buffer.flush()
+            if remainder:
+                norm_rem = self.speech_normalizer.normalize(remainder)
+                if norm_rem.strip():
+                    try:
+                        audio_data, sr = self.tts_provider.synthesize(norm_rem)
+                        if not stream_started:
+                            stream_started = True
+                            self.state_machine.transition_to(AssistantState.SPEAKING, reason="speaking_stream")
+                            self.audio_output.play_clause_stream(
+                                on_first_audio=_on_first_audio,
+                                on_complete=_on_stream_complete
+                            )
+                        self.audio_output.queue_clause(audio_data, sr)
+                    except Exception as synth_err:
+                        print(f"[Brown] Remainder synthesis error: {synth_err}")
+
+        if hasattr(self.audio_output, "end_stream"):
+            self.audio_output.end_stream()
+
+        if not stream_started:
+            self.state_machine.transition_to(AssistantState.ACTIVE_CONVERSATION, reason="empty_stream_result")
 
     def _process_command(self, text: str) -> str:
         """Route and execute command using 3-tier intelligence, tracing, and natural verification."""
@@ -496,14 +690,30 @@ class BrownOrchestrator:
 
 
     def _speak(self, text: str, next_state: AssistantState = AssistantState.ACTIVE_CONVERSATION):
-        """Synthesize text and play through interruptible audio player."""
+        """Synthesize normalized text and play through interruptible audio player."""
+        if not text or not text.strip():
+            return
+
+        # Normalize Markdown formatting, bullets, URLs, symbols, units to natural spoken words
+        spoken_text = self.speech_normalizer.normalize(text)
+        if not spoken_text.strip():
+            return
+
+        if self._turn_cancel_event.is_set():
+            print("[Brown] Turn cancelled prior to speak dispatch.")
+            return
+
         self.state_machine.transition_to(AssistantState.SPEAKING, reason="speaking_response")
-        print(f"[Brown] Speaking: \"{text}\"")
+        print(f"[Brown] Speaking: \"{spoken_text}\"")
         if self.event_bridge:
-            self.event_bridge.broadcast("tts_speaking", {"text": text, "speaking": True})
+            self.event_bridge.broadcast("tts_speaking", {"text": spoken_text, "speaking": True})
 
         try:
-            audio_samples, sample_rate = self.tts_provider.synthesize(text)
+            audio_samples, sample_rate = self.tts_provider.synthesize(spoken_text)
+
+            if self._turn_cancel_event.is_set():
+                print("[Brown] Turn cancelled prior to playback start.")
+                return
 
             def _on_playback_complete():
                 if self.event_bridge:

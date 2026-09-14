@@ -123,17 +123,6 @@ const BrownOverlayContent: React.FC = () => {
 
       {/* Modal fallback for browser if popup blocked */}
       {isSettingsOpen && <ControlPanel />}
-
-      {/* Structured details drawer if present */}
-      {structuredInfo && (
-        <StatusPill
-          state={state}
-          transcript={null}
-          statusMessage={null}
-          structuredInfo={structuredInfo}
-          isConnected={isConnected}
-        />
-      )}
     </div>
   )
 }

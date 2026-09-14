@@ -11,7 +11,8 @@ import time
 import uuid
 import logging
 from dataclasses import dataclass
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, Generator
+import threading
 from pydantic import BaseModel, Field
 
 from pydantic_ai import Agent, RunContext
@@ -25,6 +26,8 @@ from core.conversation import ConversationContext
 from core.device_resolver import DeviceResolver
 from tools.base import ToolRegistry, ToolResult
 from core.privacy import PrivacyFilter
+from core.conversation_behavior import ConversationBehaviorLayer, PersonalityProfile
+from core.memory.manager import MemoryManager
 
 logger = logging.getLogger("brown.brain")
 
@@ -32,16 +35,18 @@ logger = logging.getLogger("brown.brain")
 os.environ.setdefault("PYDANTIC_AI_NO_BANNER", "1")
 
 
-BROWN_SYSTEM_PROMPT = """You are Brown, an intelligent, personal computer assistant and voice agent.
-You manage user-configured computers, devices, and desktop environments dynamically.
+BROWN_SYSTEM_PROMPT = """You are Brown: a personal, persistent AI partner and technical colleague working side-by-side with the user.
+You are NOT a generic customer support chatbot. You are an opinionated, intelligent, and capable peer.
 
-Core personality & spoken response guidelines:
-1. Speak naturally, concisely, and directly in 1 to 2 spoken sentences. Avoid long monologues unless specifically asked for a list or explanation.
-2. Never recite robotic boilerplate (e.g. do not say "I have successfully executed the tool").
-3. Ground your answers strictly in the verified facts and data returned by tools. Never invent or hallucinate metrics, status, or outcomes.
-4. If a tool reports that a device or service is unreachable or offline, state it clearly (e.g. "The device is currently offline or unreachable."). Do not guess or make up data for an offline machine.
-5. For pure conversation, greetings, jokes, or conceptual questions, reply naturally without calling tools.
-6. When resolving follow-ups (e.g. "what about the RAM?", "can you run it?", "check the other machine", "do that again"), use the active device, entity, and last action provided in context.
+Core Persona & Dialogue Directives:
+1. Persistent Relationship: Treat dialogue as an ongoing partnership. If you know the user's name, preferences, projects, or past decisions from persistent memory, use them naturally. Never announce "According to my memory" or "I recall that".
+2. Directness over Politeness: Answer factual questions immediately ("What's the CPU usage?" -> "About 18%."). Never use introductory filler ("Sure, I can check that for you.").
+3. Opinions & Disagreement: You have genuine points of view. When the user shares opinions, critiques, or ideas (e.g. "That's a terrible idea" or "I think this architecture is perfect"), engage directly. Explain why you agree or disagree, challenge faulty assumptions, and suggest better alternatives. NEVER give passive non-answers like "I understand" or "Of course".
+4. Absolute Ban on Canned Assistant Openers: NEVER start responses with "Sure", "Certainly", "Absolutely", "Of course", "I'm here", "How can I help?", "What can I do for you?", "I'd be happy to...", or "I can help with that".
+5. Conversational Continuity: Short follow-ups ("Why?", "What about this?", "Do it again", "No, the other one", "Are you sure?") inherit full context from previous turns without requiring repetition.
+6. Punchy Answers: When appropriate, be brief ("Yeah.", "No.", "Not yet.", "Done.", "It's running.", "Give me a second.", "Actually, no.", "That failed.").
+7. Grounding: Ground system status strictly in verified tool outputs. Never invent or hallucinate metrics.
+8. Non-Action Conversation: Only invoke tools when an action is explicitly requested. Answer questions, opinions, and banter purely in spoken dialogue.
 """
 
 
@@ -55,6 +60,9 @@ class BrainDeps:
     settings: Dict[str, Any]
     privacy_mode: str = "local_only"
     event_bridge: Optional[Any] = None
+    behavior_layer: Optional[ConversationBehaviorLayer] = None
+    memory_manager: Optional[Any] = None
+    memory_context: str = ""
 
     # Turn execution telemetry
     last_tool_called: Optional[str] = None
@@ -94,6 +102,18 @@ def create_pydantic_agent(model: Optional[Model] = None) -> Agent[BrainDeps, str
     def dynamic_context_prompt(ctx: RunContext[BrainDeps]) -> str:
         summary = ctx.deps.context.build_prompt_context()
         return f"\nActive Conversation State: {summary}"
+
+    @agent.system_prompt
+    def dynamic_behavior_prompt(ctx: RunContext[BrainDeps]) -> str:
+        if ctx.deps.behavior_layer:
+            return ctx.deps.behavior_layer.build_system_prompt_directives()
+        return ""
+
+    @agent.system_prompt
+    def dynamic_memory_prompt(ctx: RunContext[BrainDeps]) -> str:
+        if ctx.deps.memory_context:
+            return f"\n{ctx.deps.memory_context}"
+        return ""
 
     @agent.tool
     def get_system_status(
@@ -545,6 +565,7 @@ class BrownBrain:
         model: Optional[Model] = None,
         context: Optional[ConversationContext] = None,
         event_bridge: Optional[Any] = None,
+        memory_manager: Optional[MemoryManager] = None,
     ):
         self.device_resolver = device_resolver
         self.tool_registry = tool_registry
@@ -553,10 +574,45 @@ class BrownBrain:
         self.context = context or ConversationContext()
         self.event_bridge = event_bridge
         self.privacy_mode = self.settings.get("privacyMode", "local_only")
+        self.memory_manager = memory_manager or MemoryManager(
+            db_path=self.settings.get("memoryDbPath", "config/memory.db")
+        )
+
+        personality_cfg = self.settings.get("personality")
+        self.behavior_layer = ConversationBehaviorLayer(
+            personality=PersonalityProfile.from_dict(personality_cfg)
+        )
 
         self.model = model or self._resolve_model()
         self.agent = create_pydantic_agent(self.model)
         self._history_messages: List[ModelMessage] = []
+
+    def _resolve_contextual_query(self, query: str) -> str:
+        """Enrich short context-dependent queries ('Why?', 'Do it again', 'No, the other one') with conversational anchors."""
+        if not self.context.recent_dialogue:
+            return query
+
+        q_clean = query.strip().lower().rstrip(".!?")
+        last_turn = self.context.recent_dialogue[-1]
+
+        # 1. "Why?" or "How come?"
+        if q_clean in ("why", "how come", "why is that", "why not"):
+            return f"{query} [Conversational Context: In response to user's previous statement '{last_turn.user_query}', Brown replied '{last_turn.response_text}']"
+
+        # 2. "Do it again" or "Retry"
+        if q_clean in ("do it again", "do that again", "repeat that", "run it again", "retry"):
+            if self.context.last_action:
+                return f"{query} [Conversational Context: Re-execute previous action '{self.context.last_action.tool_name}' on device '{self.context.last_action.target_device}']"
+
+        # 3. "No, the other one"
+        if "other one" in q_clean or "not that one" in q_clean:
+            return f"{query} [Conversational Context: The user is correcting the choice from previous turn regarding '{last_turn.user_query}']"
+
+        # 4. "Are you sure?"
+        if q_clean in ("are you sure", "really"):
+            return f"{query} [Conversational Context: User is questioning Brown's previous statement: '{last_turn.response_text}']"
+
+        return query
 
     def _resolve_model(self) -> Model:
         """Construct the appropriate PydanticAI model from configuration."""
@@ -604,6 +660,9 @@ class BrownBrain:
         t0 = time.time()
         self.context.prune_expired()
 
+        enriched_query = self._resolve_contextual_query(query)
+        memory_ctx = self.memory_manager.retrieve_context(query)
+
         deps = BrainDeps(
             device_resolver=self.device_resolver,
             tool_registry=self.tool_registry,
@@ -612,21 +671,59 @@ class BrownBrain:
             settings=self.settings,
             privacy_mode=self.privacy_mode,
             event_bridge=self.event_bridge,
+            behavior_layer=self.behavior_layer,
+            memory_manager=self.memory_manager,
+            memory_context=memory_ctx,
         )
 
         try:
-            run_result = self.agent.run_sync(
-                query,
-                deps=deps,
-                message_history=self._history_messages,
-            )
+            try:
+                run_result = self.agent.run_sync(
+                    enriched_query,
+                    deps=deps,
+                    message_history=self._history_messages,
+                )
+            except Exception as run_err:
+                err_str = str(run_err)
+                if any(code in err_str for code in ("429", "503", "RESOURCE_EXHAUSTED", "UNAVAILABLE", "Quota exceeded")):
+                    logger.warning(f"[BrownBrain] Active model hit quota/rate limit ({run_err}). Attempting fallback cloud models...")
+                    all_candidates = ["gemini-3.6-flash", "gemini-3.8-flash", "gemini-3.5-flash-lite", "gemini-flash-latest", "gemini-flash-lite-latest"]
+                    curr_name = getattr(self.model, "model_name", "")
+                    fallback_candidates = [m for m in all_candidates if m != curr_name]
+                    run_result = None
+                    for fb_name in fallback_candidates:
+                        try:
+                            from pydantic_ai.models.google import GoogleModel
+                            fb_model = GoogleModel(fb_name)
+                            fb_agent = create_pydantic_agent(fb_model)
+                            run_result = fb_agent.run_sync(
+                                enriched_query,
+                                deps=deps,
+                                message_history=self._history_messages,
+                            )
+                            self.model = fb_model
+                            self.agent = fb_agent
+                            logger.info(f"[BrownBrain] Successfully transitioned to fallback model: {fb_name}")
+                            break
+                        except Exception as fb_e:
+                            logger.warning(f"[BrownBrain] Fallback candidate {fb_name} failed: {fb_e}")
+                    if run_result is None:
+                        raise run_err
+                else:
+                    raise run_err
 
             # Keep bounded history (last 10 messages)
             self._history_messages.extend(run_result.new_messages())
             if len(self._history_messages) > 10:
                 self._history_messages = self._history_messages[-10:]
 
-            spoken_text = run_result.output
+            raw_output = run_result.output
+            spoken_text = self.behavior_layer.filter_response(
+                draft=raw_output,
+                user_query=query,
+                tool_called=deps.last_tool_called,
+                tool_success=deps.last_tool_success,
+            )
             latency_ms = round((time.time() - t0) * 1000, 2)
 
             # Record turn in bounded context
@@ -641,6 +738,9 @@ class BrownBrain:
                 verified=True if deps.last_tool_called else False,
                 device=target_device,
             )
+
+            # Asynchronously extract memories without adding latency to speech output
+            self.memory_manager.extract_async(query, spoken_text)
 
             return BrainResponse(
                 text=spoken_text,
@@ -669,6 +769,92 @@ class BrownBrain:
                 latency_ms=latency_ms,
                 fallback_used=True,
             )
+
+    def stream_query(
+        self,
+        query: str,
+        cancel_event: Optional[threading.Event] = None
+    ) -> Generator[str, None, None]:
+        """Stream query output token-by-token or chunk-by-chunk with instant cancellation support."""
+        if cancel_event and cancel_event.is_set():
+            return
+
+        self.context.prune_expired()
+        enriched_query = self._resolve_contextual_query(query)
+        memory_ctx = self.memory_manager.retrieve_context(query)
+
+        deps = BrainDeps(
+            device_resolver=self.device_resolver,
+            tool_registry=self.tool_registry,
+            context=self.context,
+            devices=self.devices,
+            settings=self.settings,
+            privacy_mode=self.privacy_mode,
+            event_bridge=self.event_bridge,
+            behavior_layer=self.behavior_layer,
+            memory_manager=self.memory_manager,
+            memory_context=memory_ctx,
+        )
+
+        try:
+            if hasattr(self.agent, "run_stream_sync"):
+                with self.agent.run_stream_sync(
+                    enriched_query,
+                    deps=deps,
+                    message_history=self._history_messages,
+                ) as stream_result:
+                    full_text = []
+                    for delta in stream_result.stream_text(delta=True):
+                        if cancel_event and cancel_event.is_set():
+                            logger.info("[BrownBrain] Stream cancelled mid-generation by turn interruption.")
+                            return
+                        full_text.append(delta)
+                        yield delta
+
+                    # Update history and context if stream wasn't cancelled
+                    if not (cancel_event and cancel_event.is_set()):
+                        self._history_messages.extend(stream_result.new_messages())
+                        if len(self._history_messages) > 10:
+                            self._history_messages = self._history_messages[-10:]
+                        raw_output = "".join(full_text)
+                        spoken_text = self.behavior_layer.filter_response(
+                            draft=raw_output,
+                            user_query=query,
+                            tool_called=deps.last_tool_called,
+                            tool_success=deps.last_tool_success,
+                        )
+                        target_device = deps.last_target_device or self.context.active_device
+                        self.context.record_turn(
+                            user_query=query,
+                            response_text=spoken_text,
+                            tool_name=deps.last_tool_called,
+                            tool_args=deps.last_tool_args,
+                            tool_result=deps.last_tool_result,
+                            success=deps.last_tool_success,
+                            verified=True if deps.last_tool_called else False,
+                            device=target_device,
+                        )
+                        # Extract memories in background
+                        self.memory_manager.extract_async(query, spoken_text)
+            else:
+                resp = self.process_query(query)
+                words = resp.text.split(" ")
+                for i, word in enumerate(words):
+                    if cancel_event and cancel_event.is_set():
+                        return
+                    prefix = " " if i > 0 else ""
+                    yield prefix + word
+        except Exception as e:
+            logger.warning(f"[BrownBrain] Streaming fallback due to: {e}")
+            if cancel_event and cancel_event.is_set():
+                return
+            resp = self.process_query(query)
+            words = resp.text.split(" ")
+            for i, word in enumerate(words):
+                if cancel_event and cancel_event.is_set():
+                    return
+                prefix = " " if i > 0 else ""
+                yield prefix + word
 
     def reset_history(self):
         """Clear active dialogue history."""

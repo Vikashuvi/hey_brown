@@ -39,12 +39,10 @@ conversation:
   timeout_seconds: 8.0           # follow-up listening window before returning to sleep
   greeting: "Yeah, I'm here. What can I do for you?"
   # Barge-in settings:
-  # When using laptop built-in speakers, set barge_in_enabled to false to prevent the
-  # microphone from hearing the speaker and cutting off playback (acoustic feedback).
-  # If wearing headphones/earphones (AirPods, etc.), barge_in_enabled can be set to true.
-  barge_in_enabled: false
-  barge_in_grace_period_sec: 1.2 # ignore mic for first 1.2s of playback to prevent speaker echo
-  barge_in_min_frames: 3         # require sustained speech to interrupt
+  # Dynamic acoustic echo rejection allows barge-in on laptop speakers without self-triggering
+  barge_in_enabled: true
+  barge_in_grace_period_sec: 0.0 # Dynamic acoustic echo rejection replaces rigid delay
+  barge_in_min_frames: 2         # ~160ms sustained speech to interrupt
 
 devices:
   paperball:
@@ -134,4 +132,14 @@ wake_settings:
   calibration_mode: false
   threshold: 0.5
   speaker_verification: false
+
+personality:
+  warmth: 0.7
+  directness: 0.8
+  verbosity: 0.3
+  humor: 0.4
+  formality: 0.3
+  curiosity: 0.5
+  acknowledgement_frequency: 0.2
+  response_variation: 0.8
 

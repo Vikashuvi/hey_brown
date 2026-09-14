@@ -188,12 +188,35 @@ Brown operates as a dual-machine, multimodal voice assistant distributed across 
 
 ---
 
+### Milestone 9 — Natural Conversation, Liveliness & Interaction State [CURRENT]
+* **Goal**: Transform Brown from a robotic chatbot that opens with repetitive canned filler into an agile, context-aware human conversation partner.
+* **Accomplishments**:
+  * **Conversation Behavior Layer** (`core/conversation_behavior.py`):
+    * Deterministic, zero-latency (<1ms) response quality filter and momentum manager running between AI generation and TTS.
+    * Tracks short-lived interaction state: session turn counts, inter-turn cadence (momentum), last user query, last Brown response, opening words, and consecutive acknowledgements.
+  * **Deterministic Response Policy Engine**:
+    * Strips robotic assistant filler (`"Sure"`, `"Certainly"`, `"Of course"`, `"I'd be happy to"`, `"I can help with that"`).
+    * Drops redundant action echoing on follow-ups (`"Checking the RAM for you. It's sitting around 5.1 GB."` $\rightarrow$ `"It's sitting around 5.1 GB."`).
+    * Enforces response variety by penalizing repeating opening words across consecutive turns.
+    * Fully supports punchy, natural one-word / short answers (`"Yeah."`, `"Done."`, `"Not yet."`, `"Around 3 GB."`, `"Give me a second."`, `"That failed."`).
+  * **Dynamic Wake Greetings** (`core/orchestrator.py`):
+    * Replaced static repetitive greeting with momentum-aware wake acknowledgments (`"Yeah?"`, `"Hey."`, `"I'm here."`).
+  * **Configurable Personality Sliders** (`config/settings.json`, `config/default.yaml`):
+    * Added high-level controls: `warmth`, `directness`, `verbosity`, `humor`, `formality`, `curiosity`, `acknowledgement_frequency`, `response_variation`.
+  * **Multi-Cloud Model Automatic Failover** (`core/ai/brain.py`):
+    * Automatic, invisible failover on 429 quota exhaustion or 503 high-demand errors across `gemini-3.6-flash`, `gemini-3.8-flash`, and `gemini-3.5-flash-lite`.
+  * **8-Scenario Automated Liveliness Test Suite** (`tests/test_conversation_liveliness.py`):
+    * 11 comprehensive unit and integration tests covering all 8 mandatory dialogue scenarios (new conversations, follow-up questions, casual chats, tool executions, failed executions, topic shifts, repeated requests, and pure conversation).
+
+---
+
 ## 🧪 Test Suite Status
 
-All unit and integration tests pass cleanly across 21 test modules:
+All unit and integration tests pass cleanly across 22 test modules:
 
 | Test File | Coverage / Purpose | Status |
 |:---|:---|:---:|
+| `tests/test_conversation_liveliness.py` | 8 natural conversation scenarios, behavior layer, canned filler removal | ✅ PASS (11/11) |
 | `tests/test_generic_device_registry.py` | $N$-device registration, capability queries, dynamic prompt summary | ✅ PASS (5/5) |
 | `tests/test_local_ai_runtime.py` | `OllamaRuntime`, `OpenAICompatibleRuntime`, dynamic device resolution | ✅ PASS (4/4) |
 | `tests/test_local_ai_lifecycle.py` | Local AI warm, idle unload, resource checks, OpenAI compatibility | ✅ PASS (8/8) |
@@ -214,9 +237,11 @@ All unit and integration tests pass cleanly across 21 test modules:
 | `tests/test_wake_calibration.py` | Acoustic energy calibration & ambient noise rejection | ✅ PASS (3/3) |
 | `tests/test_event_bridge.py` | Thread-safe WebSocket mascot broadcast bridge | ✅ PASS (1/1) |
 | `tests/test_live_models.py` | Silero VAD v5 & Faster-Whisper model loading | ✅ PASS (2/2) |
-| `tests/test_orchestrator.py` | Full orchestrator lifecycle loop | ✅ PASS (2/2) |
+| `tests/test_voice_optimization_and_barge_in.py` | SpeechNormalizer formatting & true barge-in (Cases A through L) | ✅ PASS (16/16) |
+| `tests/test_conversational_memory.py` | 4-tier memory, SQLite restart persistence, short follow-ups, peer partner | ✅ PASS (7/7) |
+| `tests/test_orchestrator.py` | Full orchestrator lifecycle loop & wake word handling | ✅ PASS (2/2) |
 
-**Current Score:** **78 / 78 Tests Passing** (100%)
+**Current Score:** **112 / 112 Tests Passing** (100%)
 
 
 ---
@@ -224,7 +249,7 @@ All unit and integration tests pass cleanly across 21 test modules:
 ## 🗺️ Upcoming Roadmap
 
 1. **Local LLM Node on Error Boy**: Leverage Error Boy's GTX 1650 (4GB VRAM) for local GGUF / Ollama inference for complex reasoning tasks.
-2. **Cross-Machine File & Clipboard Sync**: Allow sending files, code snippets, or clipboard contents between Paperball and Error Boy.
-3. **Hardware & Peripheral Control**: Support hardware sensors and automated scripts.
-4. **Hermes Task Execution**: Multi-step autonomous task planning using typed device capabilities.
+2. **Hardware & Peripheral Control**: Support hardware sensors and automated scripts.
+3. **Hermes Task Execution**: Multi-step autonomous task planning using typed device capabilities.
+
 

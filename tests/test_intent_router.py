@@ -71,11 +71,25 @@ def test_intent_router_status_and_stops():
     assert r1.tool_args["device"] == "paperball"
 
     # Stop / interruption
-    r2 = router.route("actually stop")
-    assert r2.action_type == "stop"
-
-    r3 = router.route("quiet!")
-    assert r3.action_type == "stop"
+    for stop_phrase in [
+        "stop",
+        "Stop!",
+        "actually stop",
+        "quiet!",
+        "be quiet",
+        "shut up",
+        "stop talking",
+        "stop it",
+        "please stop",
+        "hey brown stop",
+        "brown stop",
+        "Brown, stop talking!",
+        "nevermind",
+        "hold on",
+        "wait",
+    ]:
+        res = router.route(stop_phrase)
+        assert res.action_type == "stop", f"Failed to match stop phrase: {stop_phrase}"
 
 
 def test_intent_router_conversation():

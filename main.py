@@ -235,9 +235,9 @@ def build_orchestrator(config: Dict[str, Any]) -> BrownOrchestrator:
         auto_warm=local_ai_cfg.get("auto_warm", True),
         auto_start=local_ai_cfg.get("auto_start", True),
     )
-    orchestrator.barge_in_enabled = conv_cfg.get("barge_in_enabled", True)
-    orchestrator.barge_in_grace_period_sec = conv_cfg.get("barge_in_grace_period_sec", 1.2)
-    orchestrator.barge_in_min_frames = conv_cfg.get("barge_in_min_frames", 3)
+    orchestrator.barge_in_enabled = user_settings.get("bargeInEnabled", conv_cfg.get("barge_in_enabled", True))
+    orchestrator.barge_in_grace_period_sec = conv_cfg.get("barge_in_grace_period_sec", 0.0)
+    orchestrator.barge_in_min_frames = conv_cfg.get("barge_in_min_frames", 2)
     return orchestrator
 
 
