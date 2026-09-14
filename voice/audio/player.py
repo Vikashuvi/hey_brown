@@ -58,8 +58,7 @@ class InterruptibleAudioPlayer(AudioOutput):
                 except Exception:
                     pass
                 self._current_stream = None
-
-            if sd is not None:
+            elif sd is not None:
                 try:
                     sd.stop()
                 except Exception:

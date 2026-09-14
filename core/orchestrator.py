@@ -377,6 +377,67 @@ class BrownOrchestrator:
                 self.state_machine.transition_to(AssistantState.ACTIVE_CONVERSATION, reason="user_stop_command")
                 return
 
+            # Check Level 1 Pattern Matching for Identity / Local Memory Fast-Path (<0.1ms, zero LLM, zero quota)
+            pattern_action = self.intent_router.match_pattern(text)
+            if pattern_action and pattern_action.action_type == "memory_lookup":
+                key = pattern_action.tool_name
+                stored_val = None
+                if self.brain and hasattr(self.brain, "memory_manager"):
+                    rec = self.brain.memory_manager.store.get(key)
+                    if rec:
+                        stored_val = rec.value
+
+                if key == "user_name":
+                    response_text = f"Your name is {stored_val}." if stored_val else "I don't know your name yet. What should I call you?"
+                elif key == "preferred_editor":
+                    response_text = f"Your preferred editor is {stored_val}." if stored_val else "I don't have your preferred editor saved yet."
+                elif key == "current_project":
+                    response_text = f"You're working on {stored_val}." if stored_val else "I don't have a project name saved yet."
+                else:
+                    response_text = f"I have {key} saved as {stored_val}." if stored_val else "I don't have that information saved."
+
+                print(f"[Brown] Memory Fast-Path resolved '{key}': \"{response_text}\" (<1ms, 0 quota)")
+                self._speak(response_text, next_state=AssistantState.ACTIVE_CONVERSATION)
+                return
+
+            # Check Level 1 Pattern Matching for Deterministic Tool Call (<1ms, zero LLM, instant execution)
+            if pattern_action and pattern_action.action_type == "tool_call":
+                tool = self.tool_registry.get(pattern_action.tool_name)
+                if tool:
+                    target_dev = pattern_action.target_device or "paperball"
+                    args = dict(pattern_action.tool_args or {})
+                    if "device" not in args:
+                        args["device"] = target_dev
+                    tool_res = tool.execute(**args)
+
+                    if self.brain and hasattr(self.brain, "context"):
+                        self.brain.context.record_turn(
+                            user_query=text,
+                            response_text=tool_res.message,
+                            tool_name=pattern_action.tool_name,
+                            tool_args=args,
+                            tool_result=tool_res.data or {},
+                            success=tool_res.success,
+                            verified=True,
+                            device=target_dev
+                        )
+                        if "app_name" in args:
+                            self.brain.context.active_app = args["app_name"]
+                            self.brain.context.update_entity("app", args["app_name"])
+                        self.brain.context.set_active_device(target_dev)
+
+                    if self.event_bridge:
+                        self.event_bridge.broadcast("tool_result", {
+                            "tool": pattern_action.tool_name,
+                            "success": tool_res.success,
+                            "message": tool_res.message,
+                            "data": tool_res.data
+                        })
+
+                    print(f"[Brown] Pattern Action executed '{pattern_action.tool_name}': \"{tool_res.message}\" (<10ms, 0 quota)")
+                    self._speak(tool_res.message, next_state=AssistantState.ACTIVE_CONVERSATION)
+                    return
+
             # Streaming via Conversational Brain if available
             if self.brain and hasattr(self.brain, "stream_query") and hasattr(self.audio_output, "queue_clause"):
                 self._stream_brain_response(text, t_0, t_1)
@@ -515,6 +576,71 @@ class BrownOrchestrator:
             trace.finish()
             trace.log_summary()
             return "Stopped."
+
+        pattern_action = self.intent_router.match_pattern(text)
+        if pattern_action and pattern_action.action_type == "memory_lookup":
+            key = pattern_action.tool_name
+            stored_val = None
+            if self.brain and hasattr(self.brain, "memory_manager"):
+                rec = self.brain.memory_manager.store.get(key)
+                if rec:
+                    stored_val = rec.value
+
+            if key == "user_name":
+                resp = f"Your name is {stored_val}." if stored_val else "I don't know your name yet. What should I call you?"
+            elif key == "preferred_editor":
+                resp = f"Your preferred editor is {stored_val}." if stored_val else "I don't have your preferred editor saved yet."
+            elif key == "current_project":
+                resp = f"You're working on {stored_val}." if stored_val else "I don't have a project name saved yet."
+            else:
+                resp = f"I have {key} saved as {stored_val}." if stored_val else "I don't have that information saved."
+
+            trace.intent_latency_ms = round((time.time() - t_route_0) * 1000, 2)
+            trace.provider_used = "memory_store"
+            trace.finish()
+            trace.log_summary()
+            return resp
+
+        if pattern_action and pattern_action.action_type == "tool_call":
+            tool = self.tool_registry.get(pattern_action.tool_name)
+            if tool:
+                target_dev = pattern_action.target_device or "paperball"
+                args = dict(pattern_action.tool_args or {})
+                if "device" not in args:
+                    args["device"] = target_dev
+                tool_res = tool.execute(**args)
+                trace.intent_latency_ms = round((time.time() - t_route_0) * 1000, 2)
+                trace.provider_used = "deterministic"
+                trace.tool_name = pattern_action.tool_name
+                trace.target_device = target_dev
+                trace.success = tool_res.success
+                trace.finish()
+                trace.log_summary()
+
+                if self.brain and hasattr(self.brain, "context"):
+                    self.brain.context.record_turn(
+                        user_query=text,
+                        response_text=tool_res.message,
+                        tool_name=pattern_action.tool_name,
+                        tool_args=args,
+                        tool_result=tool_res.data or {},
+                        success=tool_res.success,
+                        verified=True,
+                        device=target_dev
+                    )
+                    if "app_name" in args:
+                        self.brain.context.active_app = args["app_name"]
+                        self.brain.context.update_entity("app", args["app_name"])
+                    self.brain.context.set_active_device(target_dev)
+
+                if self.event_bridge:
+                    self.event_bridge.broadcast("tool_result", {
+                        "tool": pattern_action.tool_name,
+                        "success": tool_res.success,
+                        "message": tool_res.message,
+                        "data": tool_res.data
+                    })
+                return tool_res.message
 
         # 2. Conversational Brain (PydanticAI)
         if self.brain:

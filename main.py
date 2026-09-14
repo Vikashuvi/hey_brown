@@ -25,7 +25,8 @@ from tools.system_tools import (
     GetClipboardTool,
     SetClipboardTool,
     SyncClipboardTool,
-    TransferFileTool
+    TransferFileTool,
+    ListDirectoryTool
 )
 from agents.local_agent import LocalAgent
 from agents.remote_agent import RemoteAgent
@@ -118,6 +119,7 @@ def build_orchestrator(config: Dict[str, Any]) -> BrownOrchestrator:
     registry.register(SetClipboardTool(devices))
     registry.register(SyncClipboardTool(devices))
     registry.register(TransferFileTool(devices))
+    registry.register(ListDirectoryTool(devices))
 
     # 3. Audio stream & player
     audio_cfg = config.get("audio", {})

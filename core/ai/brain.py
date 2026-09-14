@@ -7,6 +7,7 @@ device agents, security, and verification remain authoritative.
 """
 
 import os
+import re
 import time
 import uuid
 import logging
@@ -39,14 +40,30 @@ BROWN_SYSTEM_PROMPT = """You are Brown: a personal, persistent AI partner and te
 You are NOT a generic customer support chatbot. You are an opinionated, intelligent, and capable peer.
 
 Core Persona & Dialogue Directives:
-1. Persistent Relationship: Treat dialogue as an ongoing partnership. If you know the user's name, preferences, projects, or past decisions from persistent memory, use them naturally. Never announce "According to my memory" or "I recall that".
-2. Directness over Politeness: Answer factual questions immediately ("What's the CPU usage?" -> "About 18%."). Never use introductory filler ("Sure, I can check that for you.").
-3. Opinions & Disagreement: You have genuine points of view. When the user shares opinions, critiques, or ideas (e.g. "That's a terrible idea" or "I think this architecture is perfect"), engage directly. Explain why you agree or disagree, challenge faulty assumptions, and suggest better alternatives. NEVER give passive non-answers like "I understand" or "Of course".
-4. Absolute Ban on Canned Assistant Openers: NEVER start responses with "Sure", "Certainly", "Absolutely", "Of course", "I'm here", "How can I help?", "What can I do for you?", "I'd be happy to...", or "I can help with that".
-5. Conversational Continuity: Short follow-ups ("Why?", "What about this?", "Do it again", "No, the other one", "Are you sure?") inherit full context from previous turns without requiring repetition.
-6. Punchy Answers: When appropriate, be brief ("Yeah.", "No.", "Not yet.", "Done.", "It's running.", "Give me a second.", "Actually, no.", "That failed.").
-7. Grounding: Ground system status strictly in verified tool outputs. Never invent or hallucinate metrics.
-8. Non-Action Conversation: Only invoke tools when an action is explicitly requested. Answer questions, opinions, and banter purely in spoken dialogue.
+1. THINK, DO NOT DICTATE (Foundational Principle):
+   - Your response is spoken directly to the user's ear via Text-To-Speech. You are an active technical peer, NOT a dictation reader or document narrator.
+   - NEVER read raw research results, long AI outputs, search results, multi-paragraph essays, or raw tool data aloud.
+   - Instead, evaluate the information internally: What is the user's underlying goal? What is actually relevant right now? Are there technical weaknesses or tradeoffs? What do you recommend?
+   - Form your own conclusion and deliver a natural, concise spoken response (1 to 3 sentences).
+   - Offer deeper detail only if useful or requested ("Want me to break down the schema?").
+   - NEVER use meta-talk preambles like "According to the AI...", "The response states...", "Here is a summary...", "Based on the tool output...", or "I have reviewed the information...". Speak directly as the engineer who evaluated it.
+2. Memory & Prior Decisions:
+   - Check proposals against persistent memory and prior decisions. If the user suggests something that contradicts an established decision (e.g. "We decided to keep the architecture lightweight"), call it out directly: "I wouldn't. We already decided to keep this lightweight, and this doesn't solve a problem we actually have."
+   - Never announce "According to my memory" or "I recall that".
+3. Directness & Opinions:
+   - Have genuine points of view. When discussing architectures, ideas, or questions, evaluate tradeoffs honestly. Agree, disagree, challenge assumptions, and warn about pitfalls.
+   - Answer factual questions immediately ("What's the CPU usage?" -> "About 18%."). Never use introductory filler ("Sure, I can check that for you.").
+4. Absolute Ban on Canned Assistant Openers:
+   - NEVER start responses with "Sure", "Certainly", "Absolutely", "Of course", "I'm here", "How can I help?", "What can I do for you?", "I'd be happy to...", or "I can help with that".
+5. Conversational Continuity & Depth:
+   - Short follow-ups ("Why?", "What about this?", "Do it again", "No, the other one", "Are you sure?") inherit full context from previous turns without requiring repetition.
+   - If the user explicitly asks for deep elaboration ("Give me the full details", "Explain everything", "Walk me through it"), then provide the comprehensive technical explanation.
+6. Punchy Answers:
+   - When appropriate, be brief ("Yeah.", "No.", "Not yet.", "Done.", "It's running.", "Give me a second.", "Actually, no.", "That failed.").
+7. Grounding:
+   - Ground system status strictly in verified tool outputs. Interpret what the numbers mean for the user instead of reciting a laundry list of raw metrics.
+8. Non-Action Conversation:
+   - Only invoke tools when an action is explicitly requested. Answer questions, opinions, and banter purely in spoken dialogue.
 """
 
 
@@ -273,6 +290,39 @@ def create_pydantic_agent(model: Optional[Model] = None) -> Agent[BrainDeps, str
             "success": result.success,
             "device": dev,
             "url": url,
+            "message": result.message,
+            "data": result.data or {}
+        }
+        ctx.deps.last_tool_result = res_dict
+        return res_dict
+
+    @agent.tool
+    def list_directory(
+        ctx: RunContext[BrainDeps],
+        path: Optional[str] = "projects",
+        target_device: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Safely lists files or project directories on a target device (defaults to 'projects' folder on host MacBook)."""
+        dev = ctx.deps.device_resolver.resolve(target_device or ctx.deps.context.active_device)
+        ctx.deps.last_tool_called = "list_directory"
+        ctx.deps.last_tool_args = {"path": path, "device": dev}
+        ctx.deps.last_target_device = dev
+
+        tool = ctx.deps.tool_registry.get("list_directory")
+        if not tool:
+            res = {"success": False, "error": "List directory tool unavailable.", "device": dev}
+            ctx.deps.last_tool_result = res
+            ctx.deps.last_tool_success = False
+            return res
+
+        result = tool.execute(path=path or "projects", device=dev)
+        ctx.deps.last_tool_success = result.success
+        ctx.deps.context.set_active_device(dev)
+
+        res_dict = {
+            "success": result.success,
+            "device": dev,
+            "path": path,
             "message": result.message,
             "data": result.data or {}
         }
@@ -583,8 +633,22 @@ class BrownBrain:
             personality=PersonalityProfile.from_dict(personality_cfg)
         )
 
-        self.model = model or self._resolve_model()
-        self.agent = create_pydantic_agent(self.model)
+        self._explicit_model = model is not None
+        if model:
+            self.model = model
+            self.agent = create_pydantic_agent(self.model)
+            self.local_model = None
+            self.cloud_model = None
+            self.local_agent = None
+            self.cloud_agent = None
+        else:
+            self.local_model = self._init_local_model()
+            self.cloud_model = self._init_cloud_model()
+            self.local_agent = create_pydantic_agent(self.local_model) if self.local_model else None
+            self.cloud_agent = create_pydantic_agent(self.cloud_model) if self.cloud_model else None
+            self.model = self.local_model or self.cloud_model or TestModel()
+            self.agent = self.local_agent or self.cloud_agent or create_pydantic_agent(self.model)
+
         self._history_messages: List[ModelMessage] = []
 
     def _resolve_contextual_query(self, query: str) -> str:
@@ -612,53 +676,118 @@ class BrownBrain:
         if q_clean in ("are you sure", "really"):
             return f"{query} [Conversational Context: User is questioning Brown's previous statement: '{last_turn.response_text}']"
 
+        # 5. "Give me the full details" / "Explain everything" / "Break it down"
+        if any(trigger in q_clean for trigger in ("full detail", "full details", "explain everything", "tell me more", "break it down", "give me the details", "what are the details")):
+            return f"{query} [Conversational Context: User explicitly requests full in-depth technical details following Brown's previous concise summary: '{last_turn.response_text}']"
+
         return query
 
-    def _resolve_model(self) -> Model:
-        """Construct the appropriate PydanticAI model from configuration."""
+    def _init_local_model(self) -> Optional[Model]:
+        """Initialize local OpenAI-compatible model (e.g. Qwen 3 VL on Error Boy)."""
         local_ai_enabled = self.settings.get("localAiEnabled", True)
         local_ai_url = self.settings.get("localAiUrl", "http://10.217.30.46:8765")
         local_model_name = self.settings.get("localAiModel", "qwen3-vl:2b")
+        if not local_ai_enabled:
+            return None
+        try:
+            import httpx
+            from openai import AsyncOpenAI
+            target_dev_id = self.device_resolver.find_device_for_local_ai()
+            target_dev = self.device_resolver.get_device(target_dev_id) if target_dev_id else None
+            resolved_url = (target_dev.connection_url if target_dev and target_dev.connection_url else None) or local_ai_url
+            base_url = f"{resolved_url.rstrip('/')}/v1"
+            client = AsyncOpenAI(
+                base_url=base_url,
+                api_key="ollama",
+                max_retries=0,
+                timeout=httpx.Timeout(connect=2.0, read=25.0, write=5.0, pool=2.0)
+            )
+            provider = OpenAIProvider(openai_client=client)
+            return ResilientLocalOpenAIModel(local_model_name, provider=provider)
+        except Exception as e:
+            logger.warning(f"[BrownBrain] Could not initialize local model: {e}")
+            return None
+
+    def _init_cloud_model(self) -> Optional[Model]:
+        """Initialize high-reasoning Cloud Gemini model with quota-friendly configuration."""
         cloud_ai_enabled = self.settings.get("cloudAiEnabled", False)
         gemini_key = self.settings.get("geminiApiKey") or os.environ.get("GEMINI_API_KEY")
+        if not cloud_ai_enabled or not PrivacyFilter.check_cloud_allowed(self.privacy_mode) or not gemini_key:
+            return None
+        try:
+            os.environ.setdefault("GEMINI_API_KEY", gemini_key)
+            from pydantic_ai.models.google import GoogleModel
+            cloud_model_name = self.settings.get("cloudAiModel", "gemini-3.5-flash")
+            return GoogleModel(cloud_model_name)
+        except Exception as ce:
+            logger.warning(f"[BrownBrain] Could not initialize cloud model: {ce}")
+            return None
 
-        # 1. Local Model via OpenAI-compatible endpoint
-        if local_ai_enabled:
-            try:
-                import httpx
-                from openai import AsyncOpenAI
-                target_dev_id = self.device_resolver.find_device_for_local_ai()
-                target_dev = self.device_resolver.get_device(target_dev_id) if target_dev_id else None
-                resolved_url = (target_dev.connection_url if target_dev and target_dev.connection_url else None) or local_ai_url
-                base_url = f"{resolved_url.rstrip('/')}/v1"
-                client = AsyncOpenAI(
-                    base_url=base_url,
-                    api_key="ollama",
-                    max_retries=0,
-                    timeout=httpx.Timeout(connect=2.0, read=25.0, write=5.0, pool=2.0)
-                )
-                provider = OpenAIProvider(openai_client=client)
-                return ResilientLocalOpenAIModel(local_model_name, provider=provider)
-            except Exception as e:
-                logger.warning(f"[BrownBrain] Could not initialize local model: {e}")
+    def _resolve_model(self) -> Model:
+        """Construct the appropriate PydanticAI model from configuration."""
+        return self._init_local_model() or self._init_cloud_model() or TestModel()
 
-        # 2. Cloud Model (Gemini) if permitted by privacy mode
-        if cloud_ai_enabled and PrivacyFilter.check_cloud_allowed(self.privacy_mode) and gemini_key:
-            try:
-                os.environ.setdefault("GEMINI_API_KEY", gemini_key)
-                from pydantic_ai.models.google import GoogleModel
-                cloud_model_name = self.settings.get("cloudAiModel", "gemini-1.5-flash")
-                return GoogleModel(cloud_model_name)
-            except Exception as ce:
-                logger.warning(f"[BrownBrain] Could not initialize cloud model: {ce}")
+    def check_memory_identity_fastpath(self, query: str) -> Optional[str]:
+        """Direct, zero-token memory lookup for user identity and persistent preferences (<0.1ms)."""
+        if not self.memory_manager:
+            return None
+        q_lower = query.lower().strip().rstrip(".!?")
+        if re.search(r"\b(?:what(?:'s| is) my (?:real )?name|my (?:real )?name|who am i|do you know my name|do you remember my name|tell me my name|what do you call me)\b", q_lower):
+            name = self.memory_manager.get_user_name()
+            return f"Your name is {name}." if name else "I don't know your name yet. What should I call you?"
+        if re.search(r"\b(?:what(?:'s| is) my (?:preferred )?editor|what editor do i (?:prefer|use))\b", q_lower):
+            rec = self.memory_manager.store.get("preferred_editor")
+            return f"Your preferred editor is {rec.value}." if rec else "I don't have your preferred editor saved yet."
+        if re.search(r"\b(?:what(?:'s| is|ch) your (?:real )?name|watch your (?:real )?name|your (?:real )?name|who are you|tell me your name|what are you called)\b", q_lower):
+            return "I am Brown, your personal computer assistant."
+        if re.search(r"\b(?:what(?:'s| is) my project|what project am i working on|what is this project)\b", q_lower):
+            rec = self.memory_manager.store.get("current_project")
+            return f"You're working on {rec.value}." if rec else "I don't have a project name saved yet."
+        return None
 
-        # Fallback to TestModel
-        return TestModel()
+    def is_complex_task(self, query: str) -> bool:
+        """Determines whether a query warrants the high-reasoning Cloud Gemini model."""
+        q_lower = query.lower().strip()
+        complex_cues = [
+            "write code", "write a script", "write a python", "implement", "refactor",
+            "debug", "find the bug", "algorithm", "solve this", "complex", "deep dive",
+            "architecture", "tradeoffs", "in-depth", "explain how", "why does",
+            "compare", "benchmark", "analysis", "analyze", "mathematical", "proof",
+            "sql query", "regex for", "data structure", "dockerfile", "pull request",
+            "autonomous agent", "build an agent"
+        ]
+        words = q_lower.split()
+        if len(words) >= 30:
+            return True
+        return any(cue in q_lower for cue in complex_cues)
+
+    def get_agent_and_model_for_query(self, query: str):
+        """Select appropriate agent: Gemini cloud for very complex tasks, local model for conversation."""
+        if getattr(self, "_explicit_model", False):
+            return self.agent, self.model, False
+        if self.cloud_agent and self.is_complex_task(query):
+            return self.cloud_agent, self.cloud_model, True
+        if self.local_agent:
+            return self.local_agent, self.local_model, False
+        if self.cloud_agent:
+            return self.cloud_agent, self.cloud_model, True
+        return self.agent, self.model, False
 
     def process_query(self, query: str) -> BrainResponse:
         """Process a natural language user query with conversational context & tools."""
         t0 = time.time()
         self.context.prune_expired()
+
+        # 1. Zero-Quota Memory Identity Fast-Path (<0.1ms, no network, no LLM quota)
+        direct_fact = self.check_memory_identity_fastpath(query)
+        if direct_fact:
+            return BrainResponse(
+                text=direct_fact,
+                target_device=self.context.active_device,
+                success=True,
+                latency_ms=0.2,
+                fallback_used=False,
+            )
 
         enriched_query = self._resolve_contextual_query(query)
         memory_ctx = self.memory_manager.retrieve_context(query)
@@ -676,9 +805,11 @@ class BrownBrain:
             memory_context=memory_ctx,
         )
 
+        active_agent, active_model, is_cloud = self.get_agent_and_model_for_query(query)
+
         try:
             try:
-                run_result = self.agent.run_sync(
+                run_result = active_agent.run_sync(
                     enriched_query,
                     deps=deps,
                     message_history=self._history_messages,
@@ -686,27 +817,42 @@ class BrownBrain:
             except Exception as run_err:
                 err_str = str(run_err)
                 if any(code in err_str for code in ("429", "503", "RESOURCE_EXHAUSTED", "UNAVAILABLE", "Quota exceeded")):
-                    logger.warning(f"[BrownBrain] Active model hit quota/rate limit ({run_err}). Attempting fallback cloud models...")
-                    all_candidates = ["gemini-3.6-flash", "gemini-3.8-flash", "gemini-3.5-flash-lite", "gemini-flash-latest", "gemini-flash-lite-latest"]
-                    curr_name = getattr(self.model, "model_name", "")
-                    fallback_candidates = [m for m in all_candidates if m != curr_name]
+                    logger.warning(f"[BrownBrain] Active model hit quota/rate limit ({run_err}). Attempting fallback...")
                     run_result = None
-                    for fb_name in fallback_candidates:
+                    # Fall back to local model on Error Boy first if available
+                    if is_cloud and self.local_agent:
                         try:
-                            from pydantic_ai.models.google import GoogleModel
-                            fb_model = GoogleModel(fb_name)
-                            fb_agent = create_pydantic_agent(fb_model)
-                            run_result = fb_agent.run_sync(
+                            logger.info("[BrownBrain] Quota exceeded on cloud. Seamlessly falling back to local model...")
+                            run_result = self.local_agent.run_sync(
                                 enriched_query,
                                 deps=deps,
                                 message_history=self._history_messages,
                             )
-                            self.model = fb_model
-                            self.agent = fb_agent
-                            logger.info(f"[BrownBrain] Successfully transitioned to fallback model: {fb_name}")
-                            break
-                        except Exception as fb_e:
-                            logger.warning(f"[BrownBrain] Fallback candidate {fb_name} failed: {fb_e}")
+                        except Exception as local_e:
+                            logger.warning(f"[BrownBrain] Local fallback failed: {local_e}")
+                            run_result = None
+
+                    # If still None, try alternative cloud candidates
+                    if run_result is None:
+                        all_candidates = ["gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-flash-latest", "gemini-3.6-flash"]
+                        curr_name = getattr(active_model, "model_name", "")
+                        fallback_candidates = [m for m in all_candidates if m != curr_name]
+                        for fb_name in fallback_candidates:
+                            try:
+                                from pydantic_ai.models.google import GoogleModel
+                                fb_model = GoogleModel(fb_name)
+                                fb_agent = create_pydantic_agent(fb_model)
+                                run_result = fb_agent.run_sync(
+                                    enriched_query,
+                                    deps=deps,
+                                    message_history=self._history_messages,
+                                )
+                                self.cloud_model = fb_model
+                                self.cloud_agent = fb_agent
+                                logger.info(f"[BrownBrain] Successfully transitioned to fallback cloud model: {fb_name}")
+                                break
+                            except Exception as fb_e:
+                                logger.warning(f"[BrownBrain] Fallback candidate {fb_name} failed: {fb_e}")
                     if run_result is None:
                         raise run_err
                 else:
@@ -779,6 +925,12 @@ class BrownBrain:
         if cancel_event and cancel_event.is_set():
             return
 
+        # 1. Zero-Quota Memory Identity Fast-Path (<0.1ms, no network, no LLM quota)
+        direct_fact = self.check_memory_identity_fastpath(query)
+        if direct_fact:
+            yield direct_fact
+            return
+
         self.context.prune_expired()
         enriched_query = self._resolve_contextual_query(query)
         memory_ctx = self.memory_manager.retrieve_context(query)
@@ -796,9 +948,11 @@ class BrownBrain:
             memory_context=memory_ctx,
         )
 
+        active_agent, active_model, is_cloud = self.get_agent_and_model_for_query(query)
+
         try:
-            if hasattr(self.agent, "run_stream_sync"):
-                with self.agent.run_stream_sync(
+            if hasattr(active_agent, "run_stream_sync"):
+                with active_agent.run_stream_sync(
                     enriched_query,
                     deps=deps,
                     message_history=self._history_messages,

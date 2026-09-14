@@ -86,3 +86,17 @@ def test_device_agents_capabilities_and_running_apps():
         assert eb_caps.success
         assert "get_running_apps" in eb_caps.data["capabilities"]
 
+
+def test_paperball_list_directory():
+    pb = PaperballAgent()
+    res = pb.list_directory("projects")
+    assert res.success
+    assert "items" in res.data
+    assert res.data["count"] >= 1
+    assert "brown" in res.data["items"]
+
+    # Traversal security check
+    res_bad = pb.list_directory("/etc")
+    assert not res_bad.success
+    assert "Access denied" in res_bad.message
+

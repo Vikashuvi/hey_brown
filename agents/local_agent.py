@@ -325,6 +325,82 @@ class LocalAgent(DeviceAgent):
         except Exception as e:
             return DeviceCommandResult(success=False, message=f"Error reading file: {str(e)}")
 
+    def list_directory(self, path: Optional[str] = "projects") -> DeviceCommandResult:
+        """Safely list files and folders in allowed directories (e.g. ~/projects, ~/Downloads)."""
+        try:
+            home = os.path.expanduser("~")
+            clean_path = (path or "projects").strip().lower()
+
+            if clean_path in ("projects", "project", "projects folder", "my projects"):
+                target_dir = os.path.join(home, "projects")
+                display_label = "projects folder"
+            elif clean_path in ("downloads", "download"):
+                target_dir = os.path.join(home, "Downloads")
+                display_label = "Downloads folder"
+            elif clean_path in ("documents", "doc", "docs"):
+                target_dir = os.path.join(home, "Documents")
+                display_label = "Documents folder"
+            elif clean_path in ("desktop",):
+                target_dir = os.path.join(home, "Desktop")
+                display_label = "Desktop"
+            else:
+                raw_path = os.path.expanduser(path.strip())
+                if not os.path.isabs(raw_path):
+                    raw_path = os.path.join(home, raw_path)
+                # Security constraint: limit to home directory
+                if not os.path.abspath(raw_path).startswith(home):
+                    return DeviceCommandResult(
+                        success=False,
+                        message=f"Access denied: Path '{path}' is outside your home directory."
+                    )
+                target_dir = os.path.abspath(raw_path)
+                display_label = f"folder '{os.path.basename(target_dir)}'"
+
+            if not os.path.exists(target_dir):
+                return DeviceCommandResult(
+                    success=False,
+                    message=f"The {display_label} does not exist at {target_dir}."
+                )
+
+            if not os.path.isdir(target_dir):
+                return DeviceCommandResult(
+                    success=False,
+                    message=f"{target_dir} is not a directory."
+                )
+
+            entries = [
+                f for f in os.listdir(target_dir)
+                if not f.startswith(".")
+            ]
+            entries.sort(key=lambda s: s.lower())
+
+            count = len(entries)
+            if count == 0:
+                msg = f"Your {display_label} is empty."
+            elif count == 1:
+                msg = f"In your {display_label} on MacBook, I found 1 item: {entries[0]}."
+            elif count <= 10:
+                items_str = ", ".join(entries[:-1]) + f", and {entries[-1]}"
+                msg = f"In your {display_label} on MacBook, I found {count} projects: {items_str}."
+            else:
+                sample_str = ", ".join(entries[:8])
+                msg = f"In your {display_label} on MacBook, I found {count} projects, including: {sample_str}, and {count - 8} more."
+
+            return DeviceCommandResult(
+                success=True,
+                message=msg,
+                data={
+                    "path": target_dir,
+                    "count": count,
+                    "items": entries
+                }
+            )
+        except Exception as e:
+            return DeviceCommandResult(
+                success=False,
+                message=f"Failed to access folder: {str(e)}"
+            )
+
 
 # Backward compatibility alias
 class PaperballAgent(LocalAgent):

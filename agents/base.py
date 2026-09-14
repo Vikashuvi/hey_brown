@@ -60,6 +60,7 @@ class DeviceAgent(ABC):
             "get_system_status",
             "get_running_apps",
             "get_device_capabilities",
+            "list_directory",
         ]
 
     @property
@@ -122,3 +123,7 @@ class DeviceAgent(ABC):
     def send_file(self, filename: str, source_dir: Optional[str] = None) -> DeviceCommandResult:
         """Safely send a file to another device."""
         return DeviceCommandResult(success=False, message="File transfer send is not supported on this device.")
+
+    def list_directory(self, path: Optional[str] = "projects") -> DeviceCommandResult:
+        """Safely list files or project folders on this device."""
+        return DeviceCommandResult(success=False, message=f"Listing directory is not supported on {self.display_name}.")

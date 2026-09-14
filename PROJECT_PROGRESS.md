@@ -237,11 +237,12 @@ All unit and integration tests pass cleanly across 22 test modules:
 | `tests/test_wake_calibration.py` | Acoustic energy calibration & ambient noise rejection | ✅ PASS (3/3) |
 | `tests/test_event_bridge.py` | Thread-safe WebSocket mascot broadcast bridge | ✅ PASS (1/1) |
 | `tests/test_live_models.py` | Silero VAD v5 & Faster-Whisper model loading | ✅ PASS (2/2) |
-| `tests/test_voice_optimization_and_barge_in.py` | SpeechNormalizer formatting & true barge-in (Cases A through L) | ✅ PASS (16/16) |
+| `tests/test_voice_optimization_and_barge_in.py` | SpeechNormalizer formatting & true barge-in (Cases A through N) | ✅ PASS (18/18) |
 | `tests/test_conversational_memory.py` | 4-tier memory, SQLite restart persistence, short follow-ups, peer partner | ✅ PASS (7/7) |
+| `tests/test_stop_reading_raw_output.py` | Think-Not-Dictate synthesis, peer evaluation, decision memory, full details | ✅ PASS (10/10) |
 | `tests/test_orchestrator.py` | Full orchestrator lifecycle loop & wake word handling | ✅ PASS (2/2) |
 
-**Current Score:** **112 / 112 Tests Passing** (100%)
+**Current Score:** **124 / 124 Tests Passing** (100%)
 
 
 ---

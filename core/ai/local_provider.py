@@ -247,7 +247,7 @@ class LocalAIProvider(AIProvider):
 
         # 1. Try remote HTTP inference endpoint on Error Boy if reachable
         try:
-            probe_timeout = min(0.6, eff_timeout)
+            probe_timeout = min(1.0, eff_timeout)
             msg_dicts = []
             all_images = []
             for m in messages:

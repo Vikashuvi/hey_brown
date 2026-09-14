@@ -106,6 +106,16 @@ class ConversationBehaviorLayer:
         re.compile(r"^(i am checking|i'm checking|i am opening|i'm opening|i will open|i'll open)\s+[a-z0-9\s\-]+(\s+for you)?\.?\s*", re.IGNORECASE),
     ]
 
+    # Raw model / AI / tool dictation preambles that must never be spoken aloud
+    RAW_DICTATION_PATTERNS = [
+        re.compile(r"^(according to (the |my )?(ai|model|assistant|response|research|search|tool|results|information|data)(\s+(output|response|results|findings|report|model|document))?)[,:.]?\s*", re.IGNORECASE),
+        re.compile(r"^(based on (the |my )?(ai|model|assistant|response|research|search|tool|results|information|data)(\s+(provided|above|below|generated|results|response|output))?)[,:.]?\s*", re.IGNORECASE),
+        re.compile(r"^(the (ai|model|response|research|tool|document) (states|says|suggests|recommends|indicates)( that)?)[,:.]?\s*", re.IGNORECASE),
+        re.compile(r"^(here is a summary( of)?( the)?( [a-z0-9_\-]+)*)[:.]?\s*", re.IGNORECASE),
+        re.compile(r"^(i have reviewed (the )?(information|response|code|data|research)( provided)?)[,:.]?\s*", re.IGNORECASE),
+        re.compile(r"^(in (summary|conclusion)|to summarize)[,:]?\s*", re.IGNORECASE),
+    ]
+
     def __init__(self, personality: Optional[PersonalityProfile] = None):
         self.personality = personality or PersonalityProfile()
         self.state = InteractionState()
@@ -119,12 +129,19 @@ class ConversationBehaviorLayer:
             "\nPersonal AI Partner Behavioral Directives:",
             "- You are Brown: an intelligent, technical, opinionated personal AI partner working side-by-side with the user.",
             "- NEVER begin responses with canned filler like 'Sure', 'Certainly', 'Absolutely', 'I can help with that', 'I'd be happy to', 'Of course', or 'I'm here'. Answer the question or state the result directly.",
+            "- THINK, DO NOT DICTATE: Never dictate raw tool output, search results, research documents, or long AI answers.",
+            "  * Separate INTERNAL INFORMATION (stored in context/UI) from SPOKEN RESPONSE (your personal spoken synthesis).",
+            "  * Evaluate information: Identify strengths, weaknesses, and relevance to the user's underlying goal.",
+            "  * Check against past memory and decisions: If a suggestion contradicts an established decision (e.g. 'We decided to keep the architecture lightweight'), call it out directly ('I wouldn't. We already decided to keep this lightweight...').",
+            "  * Form your own opinion, recommendation, or critique first ('I looked through it. The overall idea is good, but I wouldn't build it that way.').",
+            "  * Never say 'According to the AI...', 'The response states...', 'Here is a summary...', or 'I have reviewed the information...'. Speak as the engineer who evaluated it.",
+            "  * Keep the spoken response concise (1-3 sentences). Offer deeper detail only if useful or requested.",
             "- You are a genuine peer with a distinct point of view. You are encouraged to:",
             "  * Disagree or challenge assumptions when warranted (e.g., User: 'I think this architecture is perfect.' -> Brown: 'I don't think it is. You're putting too much responsibility into the voice layer.')",
             "  * Engage directly with critiques or disagreements instead of saying 'I understand.' (e.g., User: 'That's a terrible idea.' -> Brown: 'Why? What would you do instead?')",
             "  * Express honest technical opinions and admit uncertainty when you don't know.",
             "  * Joke, banter, or be witty when appropriate, without being overly verbose.",
-            "- Short follow-ups require direct answers without ceremony. If the user asks 'What about the RAM?', answer directly: 'It's sitting around 5.1 GB.' Do not say 'Sure, I can check the RAM for you.'",
+            "- Short follow-ups require direct answers without ceremony. If the user asks 'Why?', explain your reasoning naturally without repeating yourself.",
             "- Embrace short, punchy answers when natural: 'Yeah.', 'No.', 'Not yet.', 'Done.', 'It's running.', 'Give me a second.', 'Actually, no.', 'That failed.'",
             "- Do not restate what the user just said or announce what you are about to do before doing it.",
             "- If an action failed, state the cause plainly and directly without groveling (e.g. 'Error Boy is unreachable, it looks offline.').",
@@ -183,6 +200,15 @@ class ConversationBehaviorLayer:
                         cleaned = candidate[0].upper() + candidate[1:]
                         break
 
+        # 3b. Strip raw dictation preambles ("According to the AI...", "The response states...", "Here is a summary...", etc.)
+        for pattern in self.RAW_DICTATION_PATTERNS:
+            match = pattern.match(cleaned)
+            if match:
+                candidate = cleaned[match.end():].strip()
+                if candidate:
+                    cleaned = candidate[0].upper() + candidate[1:]
+                    break
+
         # 4. Strip redundant action echoing for follow-ups
         # e.g., "Checking the RAM for you. It's sitting around 5.1 GB." -> "It's sitting around 5.1 GB."
         sentences = [s.strip() for s in re.split(r"(?<=[.!?])\s+", cleaned) if s.strip()]
@@ -193,6 +219,23 @@ class ConversationBehaviorLayer:
                     # Drop the echoing first sentence
                     cleaned = " ".join(sentences[1:])
                     break
+
+        # 4b. Long Response Voice Synthesis Guard:
+        # If an external response is long (>35 words or contains bullet points/multi-paragraphs)
+        # and user did not explicitly ask for full details, extract the core conclusion (first 1-2 sentences).
+        words = cleaned.split()
+        is_explicit_detail_query = any(w in user_query.lower() for w in ("full detail", "explain everything", "walk me through", "deep dive"))
+        if len(words) > 35 and not is_explicit_detail_query:
+            sentences = [s.strip() for s in re.split(r"(?<=[.!?])\s+", cleaned) if s.strip()]
+            core_sentences = []
+            for s in sentences:
+                if re.match(r"^(in conclusion|in summary|here is a summary|first|second|third|finally|\*|-|\d+\.)", s, re.IGNORECASE):
+                    continue
+                core_sentences.append(s)
+                if len(core_sentences) >= 2:
+                    break
+            if core_sentences:
+                cleaned = " ".join(core_sentences)
 
         # 5. Prevent repetitive consecutive opening words
         # e.g. If last response started with "Yeah," or "I've", avoid repeating it back-to-back

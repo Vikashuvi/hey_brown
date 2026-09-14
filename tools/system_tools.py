@@ -402,3 +402,33 @@ class TransferFileTool(BaseTool):
                 "sha256": sha256
             }
         )
+
+
+class ListDirectoryTool(BaseTool):
+    """Tool to list files or projects in a directory on a designated device."""
+
+    def __init__(self, devices: Dict[str, DeviceAgent]):
+        self.devices = devices
+
+    @property
+    def name(self) -> str:
+        return "list_directory"
+
+    @property
+    def description(self) -> str:
+        return "Safely lists files and project folders on a target device ('paperball' or 'error_boy')."
+
+    def execute(self, path: Optional[str] = "projects", device: str = "paperball", **kwargs) -> ToolResult:
+        target_device = self.devices.get(device.lower())
+        if not target_device:
+            return ToolResult(
+                success=False,
+                message=f"Unknown device '{device}'. Available: {list(self.devices.keys())}"
+            )
+
+        cmd_res = target_device.list_directory(path=path)
+        return ToolResult(
+            success=cmd_res.success,
+            message=cmd_res.message,
+            data=cmd_res.data
+        )

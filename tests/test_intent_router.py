@@ -125,3 +125,23 @@ def test_intent_router_running_apps_and_capabilities():
     assert r3.tool_name == "get_device_capabilities"
     assert r3.tool_args["device"] == "error_boy"
 
+
+def test_intent_router_list_projects_and_open_app():
+    router = DeterministicIntentRouter()
+
+    # User query from prompt
+    r1 = router.route("analyze what are the projects that are listed in my main MacBook in the projects folder,  you can find it right.")
+    assert r1.action_type == "tool_call"
+    assert r1.tool_name == "list_directory"
+    assert r1.tool_args["device"] == "paperball"
+
+    r2 = router.route("Can you open Safari?")
+    assert r2.action_type == "tool_call"
+    assert r2.tool_name == "open_application"
+    assert r2.tool_args["app_name"] == "Safari"
+    assert r2.target_device == "paperball"
+
+    r3 = router.route("what are the projects in my projects folder")
+    assert r3.action_type == "tool_call"
+    assert r3.tool_name == "list_directory"
+

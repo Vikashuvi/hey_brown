@@ -215,6 +215,30 @@ class DeterministicIntentRouter:
             rf"(?:can\s+you\s+)?(?:run|start|load|warm)\s+(?:it|the\s+local\s+llm|the\s+local\s+ai|the\s+local\s+model|the\s+model)\s+(?:on|in|at)\s+(?:the\s+)?({dev_pat})|(?:can\s+you\s+)?(?:run|start|load|warm)\s+it\s+(?:in|on|at)\s+(?:the\s+)?({dev_pat})|(?:warm|load|start)\s+(?:the\s+)?(?:local\s+)?(?:model|llm)",
             re.IGNORECASE
         )
+        self.RE_LIST_PROJECTS_WITH_DEV = re.compile(
+            rf"(?:(?:what\s+(?:are\s+)?(?:the\s+)?projects|list\s+(?:the\s+|all\s+|my\s+)?projects|analyze\s+(?:what\s+are\s+)?(?:the\s+)?projects|show\s+(?:me\s+)?(?:all\s+|the\s+|my\s+)?projects|projects\s+(?:folder|directory)|what(?:'s|\s+is)\s+(?:in\s+)?(?:the\s+)?projects\s+folder).*(?:on|in|at)\s+({dev_pat}))|(({dev_pat}).*(?:projects\s+folder|projects\s+that\s+are\s+listed|list\s+(?:the\s+|my\s+)?projects|what\s+are\s+the\s+projects))",
+            re.IGNORECASE
+        )
+        self.RE_LIST_PROJECTS = re.compile(
+            rf"(?:what\s+(?:are\s+)?(?:the\s+)?projects|list\s+(?:the\s+|all\s+|my\s+)?projects|analyze\s+(?:what\s+are\s+)?(?:the\s+)?projects|show\s+(?:me\s+)?(?:all\s+|the\s+|my\s+)?projects|projects\s+(?:folder|directory)|what(?:'s|\s+is)\s+(?:in\s+)?(?:the\s+)?projects\s+folder|what\s+projects\s+do\s+i\s+have)",
+            re.IGNORECASE
+        )
+        self.RE_USER_NAME = re.compile(
+            r"\b(?:what(?:'s| is) my (?:real )?name|my (?:real )?name|who am i|do you know my name|do you remember my name|tell me my name|what do you call me)\b",
+            re.IGNORECASE
+        )
+        self.RE_USER_EDITOR = re.compile(
+            r"\b(?:what(?:'s| is) my (?:preferred )?editor|what editor do i (?:prefer|use))\b",
+            re.IGNORECASE
+        )
+        self.RE_USER_PROJECT = re.compile(
+            r"\b(?:what(?:'s| is) my project|what project am i working on|what is this project|what project is this)\b",
+            re.IGNORECASE
+        )
+        self.RE_ASSISTANT_NAME = re.compile(
+            r"\b(?:what(?:'s| is|ch) your (?:real )?name|watch your (?:real )?name|your (?:real )?name|who are you|tell me your name|what are you called)\b",
+            re.IGNORECASE
+        )
 
     def resolve_device(self, target: Optional[str]) -> str:
         return self.device_resolver.resolve(target)
@@ -341,13 +365,49 @@ class DeterministicIntentRouter:
                 target_device=device
             )
 
+        # List Projects / Directory
+        proj_dev_match = self.RE_LIST_PROJECTS_WITH_DEV.search(clean_text)
+        proj_match = proj_dev_match or self.RE_LIST_PROJECTS.search(clean_text)
+        if proj_match:
+            dev_str = None
+            if proj_dev_match:
+                # Group 1 is the dev in "... on <dev>", group 4 is the dev in "<dev> ... projects"
+                dev_str = proj_dev_match.group(1) or proj_dev_match.group(4)
+            device = self.resolve_device(dev_str)
+            return RoutedAction(
+                action_type="tool_call",
+                tool_name="list_directory",
+                tool_args={"path": "projects", "device": device},
+                target_device=device
+            )
+
+        # Persistent Memory & Identity Lookups (<0.1ms, zero LLM, zero quota)
+        if self.RE_USER_NAME.search(clean_text):
+            return RoutedAction(
+                action_type="memory_lookup",
+                tool_name="user_name",
+                confidence=1.0
+            )
+        if self.RE_USER_EDITOR.search(clean_text):
+            return RoutedAction(
+                action_type="memory_lookup",
+                tool_name="preferred_editor",
+                confidence=1.0
+            )
+        if self.RE_USER_PROJECT.search(clean_text):
+            return RoutedAction(
+                action_type="memory_lookup",
+                tool_name="current_project",
+                confidence=1.0
+            )
+
         # Basic greetings & standard conversation
         if clean_text in ("hey brown", "brown", "are you there", "brown are you there", "hello", "hi"):
             return RoutedAction(
                 action_type="conversation",
                 direct_response="I'm right here. What can I do for you?"
             )
-        if "who are you" in clean_text:
+        if "who are you" in clean_text or self.RE_ASSISTANT_NAME.search(clean_text):
             return RoutedAction(
                 action_type="conversation",
                 direct_response="I am Brown, your personal computer assistant."
