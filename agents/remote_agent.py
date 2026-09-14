@@ -142,6 +142,32 @@ class RemoteAgent(DeviceAgent):
         payload = {"model": model} if model else {}
         return self._send_command("ai/unload", payload, method="POST", timeout=10.0)
 
+    # 12. Clipboard Operations (Phase D)
+    def get_clipboard_text(self) -> DeviceCommandResult:
+        return self._send_command("clipboard/get", method="GET", timeout=2.0)
+
+    def set_clipboard_text(self, text: str) -> DeviceCommandResult:
+        if len(text.encode("utf-8")) > 524288:
+            return DeviceCommandResult(success=False, message="Clipboard text exceeds 512KB limit.")
+        return self._send_command("clipboard/set", {"text": text}, method="POST", timeout=2.0)
+
+    def clear_clipboard(self) -> DeviceCommandResult:
+        return self._send_command("clipboard/clear", method="POST", timeout=2.0)
+
+    # 13. File Transfer Operations (Phase E)
+    def receive_file(self, filename: str, content_b64: str, target_dir: Optional[str] = None, expected_sha256: Optional[str] = None) -> DeviceCommandResult:
+        payload = {
+            "filename": filename,
+            "content_b64": content_b64,
+            "target_dir": target_dir,
+            "sha256": expected_sha256
+        }
+        return self._send_command("files/upload", payload, method="POST", timeout=15.0)
+
+    def send_file(self, filename: str, source_dir: Optional[str] = None) -> DeviceCommandResult:
+        payload = {"filename": filename, "source_dir": source_dir}
+        return self._send_command("files/download", payload, method="POST", timeout=15.0)
+
 
 # Backward compatibility alias
 class ErrorBoyAgent(RemoteAgent):

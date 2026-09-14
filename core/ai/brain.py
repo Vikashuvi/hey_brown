@@ -8,6 +8,7 @@ device agents, security, and verification remain authoritative.
 
 import os
 import time
+import uuid
 import logging
 from dataclasses import dataclass
 from typing import Dict, Any, Optional, List
@@ -16,7 +17,7 @@ from pydantic import BaseModel, Field
 from pydantic_ai import Agent, RunContext
 from pydantic_ai.models import Model
 from pydantic_ai.models.test import TestModel
-from pydantic_ai.models.openai import OpenAIChatModel
+from pydantic_ai.models.openai import OpenAIChatModel, _ChatCompletion
 from pydantic_ai.providers.openai import OpenAIProvider
 from pydantic_ai.messages import ModelMessage
 
@@ -32,17 +33,15 @@ os.environ.setdefault("PYDANTIC_AI_NO_BANNER", "1")
 
 
 BROWN_SYSTEM_PROMPT = """You are Brown, an intelligent, personal computer assistant and voice agent.
-You manage two primary machines:
-- "paperball": the local host machine (macOS).
-- "error_boy": the secondary remote machine (Arch Linux laptop with NVIDIA GPU).
+You manage user-configured computers, devices, and desktop environments dynamically.
 
 Core personality & spoken response guidelines:
 1. Speak naturally, concisely, and directly in 1 to 2 spoken sentences. Avoid long monologues unless specifically asked for a list or explanation.
 2. Never recite robotic boilerplate (e.g. do not say "I have successfully executed the tool").
 3. Ground your answers strictly in the verified facts and data returned by tools. Never invent or hallucinate metrics, status, or outcomes.
-4. If a tool reports that a device or service is unreachable or offline, state it clearly (e.g. "Error Boy is currently offline or unreachable."). Do not guess or make up data for an offline machine.
+4. If a tool reports that a device or service is unreachable or offline, state it clearly (e.g. "The device is currently offline or unreachable."). Do not guess or make up data for an offline machine.
 5. For pure conversation, greetings, jokes, or conceptual questions, reply naturally without calling tools.
-6. When resolving follow-ups (e.g. "what about the RAM?", "can you run it?", "check the other laptop", "do that again"), use the active device, entity, and last action provided in context.
+6. When resolving follow-ups (e.g. "what about the RAM?", "can you run it?", "check the other machine", "do that again"), use the active device, entity, and last action provided in context.
 """
 
 
@@ -71,7 +70,7 @@ class BrainResponse(BaseModel):
     tool_called: Optional[str] = None
     tool_args: Optional[Dict[str, Any]] = None
     tool_result: Optional[Dict[str, Any]] = None
-    target_device: str = "paperball"
+    target_device: str = "local"
     success: bool = True
     latency_ms: float = 0.0
     fallback_used: bool = False
@@ -87,6 +86,11 @@ def create_pydantic_agent(model: Optional[Model] = None) -> Agent[BrainDeps, str
     )
 
     @agent.system_prompt
+    def dynamic_device_prompt(ctx: RunContext[BrainDeps]) -> str:
+        dev_summary = ctx.deps.device_resolver.get_devices_prompt_summary()
+        return f"\nManaged Devices:\n{dev_summary}"
+
+    @agent.system_prompt
     def dynamic_context_prompt(ctx: RunContext[BrainDeps]) -> str:
         summary = ctx.deps.context.build_prompt_context()
         return f"\nActive Conversation State: {summary}"
@@ -96,7 +100,7 @@ def create_pydantic_agent(model: Optional[Model] = None) -> Agent[BrainDeps, str
         ctx: RunContext[BrainDeps],
         target_device: Optional[str] = None
     ) -> Dict[str, Any]:
-        """Retrieves CPU, RAM, and health status for a target device ('paperball' or 'error_boy')."""
+        """Retrieves CPU, RAM, and health status for a target device."""
         dev = ctx.deps.device_resolver.resolve(target_device or ctx.deps.context.active_device)
         ctx.deps.last_tool_called = "get_system_status"
         ctx.deps.last_tool_args = {"device": dev}
@@ -356,7 +360,173 @@ def create_pydantic_agent(model: Optional[Model] = None) -> Agent[BrainDeps, str
         ctx.deps.last_tool_result = res_dict
         return res_dict
 
+    @agent.tool
+    def get_clipboard(
+        ctx: RunContext[BrainDeps],
+        target_device: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Reads text from the clipboard of a target device."""
+        dev = ctx.deps.device_resolver.resolve(target_device or ctx.deps.context.active_device)
+        ctx.deps.last_tool_called = "get_clipboard"
+        ctx.deps.last_tool_args = {"device": dev}
+        ctx.deps.last_target_device = dev
+
+        tool = ctx.deps.tool_registry.get("get_clipboard")
+        if not tool:
+            res = {"success": False, "error": "Get clipboard tool unavailable.", "device": dev}
+            ctx.deps.last_tool_result = res
+            ctx.deps.last_tool_success = False
+            return res
+
+        result = tool.execute(device=dev)
+        ctx.deps.last_tool_success = result.success
+        ctx.deps.context.set_active_device(dev)
+        res_dict = {
+            "success": result.success,
+            "device": dev,
+            "message": result.message,
+            "data": result.data or {}
+        }
+        ctx.deps.last_tool_result = res_dict
+        return res_dict
+
+    @agent.tool
+    def set_clipboard(
+        ctx: RunContext[BrainDeps],
+        text: str,
+        target_device: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Sets text into the clipboard of a target device."""
+        dev = ctx.deps.device_resolver.resolve(target_device or ctx.deps.context.active_device)
+        ctx.deps.last_tool_called = "set_clipboard"
+        ctx.deps.last_tool_args = {"text": text, "device": dev}
+        ctx.deps.last_target_device = dev
+
+        tool = ctx.deps.tool_registry.get("set_clipboard")
+        if not tool:
+            res = {"success": False, "error": "Set clipboard tool unavailable.", "device": dev}
+            ctx.deps.last_tool_result = res
+            ctx.deps.last_tool_success = False
+            return res
+
+        result = tool.execute(text=text, device=dev)
+        ctx.deps.last_tool_success = result.success
+        ctx.deps.context.set_active_device(dev)
+        res_dict = {
+            "success": result.success,
+            "device": dev,
+            "message": result.message,
+            "data": result.data or {}
+        }
+        ctx.deps.last_tool_result = res_dict
+        return res_dict
+
+    @agent.tool
+    def sync_clipboard(
+        ctx: RunContext[BrainDeps],
+        from_device: Optional[str] = None,
+        to_device: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Synchronizes/copies clipboard contents from one device to another."""
+        src_dev = ctx.deps.device_resolver.resolve(from_device or ctx.deps.device_resolver.default_local_device)
+        dst_dev = ctx.deps.device_resolver.resolve(to_device or ctx.deps.device_resolver.default_remote_device)
+
+        ctx.deps.last_tool_called = "sync_clipboard"
+        ctx.deps.last_tool_args = {"from_device": src_dev, "to_device": dst_dev}
+        ctx.deps.last_target_device = dst_dev
+
+        tool = ctx.deps.tool_registry.get("sync_clipboard")
+        if not tool:
+            res = {"success": False, "error": "Sync clipboard tool unavailable."}
+            ctx.deps.last_tool_result = res
+            ctx.deps.last_tool_success = False
+            return res
+
+        result = tool.execute(from_device=src_dev, to_device=dst_dev)
+        ctx.deps.last_tool_success = result.success
+        ctx.deps.context.set_active_device(dst_dev)
+        res_dict = {
+            "success": result.success,
+            "from_device": src_dev,
+            "to_device": dst_dev,
+            "message": result.message,
+            "data": result.data or {}
+        }
+        ctx.deps.last_tool_result = res_dict
+        return res_dict
+
+    @agent.tool
+    def transfer_file(
+        ctx: RunContext[BrainDeps],
+        filename: str,
+        from_device: Optional[str] = None,
+        to_device: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Transfers a file from a source device to a target destination device."""
+        src_dev = ctx.deps.device_resolver.resolve(from_device or ctx.deps.device_resolver.default_local_device)
+        dst_dev = ctx.deps.device_resolver.resolve(to_device or ctx.deps.device_resolver.default_remote_device)
+
+        ctx.deps.last_tool_called = "transfer_file"
+        ctx.deps.last_tool_args = {"filename": filename, "from_device": src_dev, "to_device": dst_dev}
+        ctx.deps.last_target_device = dst_dev
+
+        tool = ctx.deps.tool_registry.get("transfer_file")
+        if not tool:
+            res = {"success": False, "error": "Transfer file tool unavailable."}
+            ctx.deps.last_tool_result = res
+            ctx.deps.last_tool_success = False
+            return res
+
+        result = tool.execute(filename=filename, from_device=src_dev, to_device=dst_dev)
+        ctx.deps.last_tool_success = result.success
+        ctx.deps.context.set_active_device(dst_dev)
+        res_dict = {
+            "success": result.success,
+            "filename": filename,
+            "from_device": src_dev,
+            "to_device": dst_dev,
+            "message": result.message,
+            "data": result.data or {}
+        }
+        ctx.deps.last_tool_result = res_dict
+        return res_dict
+
     return agent
+
+
+class ResilientLocalOpenAIModel(OpenAIChatModel):
+    """Resilient OpenAI Chat Model wrapper for local runtimes and daemons.
+    Normalizes missing fields (id, choices, object) so PydanticAI never crashes on non-standard responses.
+    """
+    def _validate_completion(self, response: Any) -> _ChatCompletion:
+        dump = response.model_dump() if hasattr(response, "model_dump") else (response if isinstance(response, dict) else {})
+
+        # If choices is missing or empty, build standard choice structure
+        if not dump.get("choices"):
+            content = dump.get("content") or dump.get("message", {}).get("content") or dump.get("text") or "I processed your request."
+            dump["id"] = dump.get("id") or f"chatcmpl-{uuid.uuid4().hex[:12]}"
+            dump["object"] = "chat.completion"
+            dump["created"] = dump.get("created") or int(time.time())
+            dump["model"] = dump.get("model") or getattr(self, "model_name", "local-model")
+            dump["choices"] = [
+                {
+                    "index": 0,
+                    "message": {
+                        "role": "assistant",
+                        "content": str(content)
+                    },
+                    "finish_reason": "stop"
+                }
+            ]
+        else:
+            if not dump.get("id"):
+                dump["id"] = f"chatcmpl-{uuid.uuid4().hex[:12]}"
+            if not dump.get("object"):
+                dump["object"] = "chat.completion"
+            if not dump.get("created"):
+                dump["created"] = int(time.time())
+
+        return _ChatCompletion.model_validate(dump)
 
 
 class BrownBrain:
@@ -401,7 +571,10 @@ class BrownBrain:
             try:
                 import httpx
                 from openai import AsyncOpenAI
-                base_url = f"{local_ai_url.rstrip('/')}/v1"
+                target_dev_id = self.device_resolver.find_device_for_local_ai()
+                target_dev = self.device_resolver.get_device(target_dev_id) if target_dev_id else None
+                resolved_url = (target_dev.connection_url if target_dev and target_dev.connection_url else None) or local_ai_url
+                base_url = f"{resolved_url.rstrip('/')}/v1"
                 client = AsyncOpenAI(
                     base_url=base_url,
                     api_key="ollama",
@@ -409,7 +582,7 @@ class BrownBrain:
                     timeout=httpx.Timeout(connect=2.0, read=25.0, write=5.0, pool=2.0)
                 )
                 provider = OpenAIProvider(openai_client=client)
-                return OpenAIChatModel(local_model_name, provider=provider)
+                return ResilientLocalOpenAIModel(local_model_name, provider=provider)
             except Exception as e:
                 logger.warning(f"[BrownBrain] Could not initialize local model: {e}")
 

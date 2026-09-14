@@ -21,21 +21,42 @@ class LocalAIProvider(AIProvider):
 
     def __init__(
         self,
-        base_url: str = "http://error-boy.local:8765",
+        base_url: Optional[str] = None,
         model: str = "qwen3-vl:2b",
         timeout: float = 6.0,
-
         keep_warm: bool = True,
         idle_unload_minutes: int = 15,
-        device_resolver: Optional[DeviceResolver] = None
+        device_resolver: Optional[DeviceResolver] = None,
+        preferred_device_id: Optional[str] = None,
+        runtime_type: str = "ollama",
     ):
-        self.base_url = base_url.rstrip("/")
+        self._explicit_base_url = base_url.rstrip("/") if base_url else None
         self.model = model
         self.timeout = timeout
         self.keep_warm = keep_warm
         self.idle_unload_minutes = idle_unload_minutes
         self.device_resolver = device_resolver or DeviceResolver()
+        self.preferred_device_id = preferred_device_id
+        self.runtime_type = runtime_type
         self._last_active_time = time.time()
+
+    @property
+    def base_url(self) -> str:
+        """Dynamically resolve base_url from active local AI device if registered."""
+        if self._explicit_base_url:
+            return self._explicit_base_url
+        target_id = self.device_resolver.find_device_for_local_ai(self.preferred_device_id)
+        if target_id:
+            dev = self.device_resolver.get_device(target_id)
+            if dev and dev.connection_url:
+                return dev.connection_url.rstrip("/")
+        return "http://localhost:8765"
+
+    @property
+    def active_device_id(self) -> str:
+        """Return the canonical ID of the device hosting local AI."""
+        target_id = self.device_resolver.find_device_for_local_ai(self.preferred_device_id)
+        return target_id or "local"
 
     @property
     def name(self) -> str:
@@ -94,7 +115,7 @@ class LocalAIProvider(AIProvider):
             "state": "OFFLINE",
             "ready": False,
             "reason": "daemon_unreachable",
-            "device": "error_boy",
+            "device": self.active_device_id,
             "model": self.model
         }
 

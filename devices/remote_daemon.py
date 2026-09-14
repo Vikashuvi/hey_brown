@@ -12,8 +12,11 @@ import re
 import sys
 import json
 import time
+import uuid
 import shutil
 import socket
+import base64
+import hashlib
 import argparse
 import threading
 import subprocess
@@ -380,6 +383,34 @@ def get_desktop_environment() -> Dict[str, str]:
     return env
 
 
+def get_linux_clipboard() -> str:
+    """Read clipboard using wl-paste (Wayland) or xclip/xsel (X11)."""
+    env = get_desktop_environment()
+    for cmd in (["wl-paste", "--no-newline"], ["xclip", "-selection", "clipboard", "-o"], ["xsel", "-ob"]):
+        if shutil.which(cmd[0]):
+            try:
+                res = subprocess.run(cmd, capture_output=True, text=True, timeout=2.0, env=env)
+                if res.returncode == 0:
+                    return res.stdout
+            except Exception:
+                pass
+    return ""
+
+
+def set_linux_clipboard(text: str) -> bool:
+    """Set clipboard using wl-copy (Wayland) or xclip/xsel (X11)."""
+    env = get_desktop_environment()
+    for cmd in (["wl-copy"], ["xclip", "-selection", "clipboard"], ["xsel", "-ib"]):
+        if shutil.which(cmd[0]):
+            try:
+                res = subprocess.run(cmd, input=text, text=True, capture_output=True, timeout=2.0, env=env)
+                if res.returncode == 0:
+                    return True
+            except Exception:
+                pass
+    return False
+
+
 class NodeRequestHandler(BaseHTTPRequestHandler):
     """HTTP request handler implementing the node's strict typed REST API."""
 
@@ -474,7 +505,9 @@ class NodeRequestHandler(BaseHTTPRequestHandler):
                         "open_application",
                         "close_application",
                         "open_url",
-                        "get_device_capabilities"
+                        "get_device_capabilities",
+                        "clipboard",
+                        "file_transfer"
                     ]
                 }
             })
@@ -511,6 +544,15 @@ class NodeRequestHandler(BaseHTTPRequestHandler):
             self._send_json_response(200, {
                 "success": True,
                 "models": models_list
+            })
+
+        # 7. Clipboard Get (/clipboard/get)
+        elif clean_path == "/clipboard/get":
+            text = get_linux_clipboard()
+            self._send_json_response(200, {
+                "success": True,
+                "message": f"Read {len(text)} characters from {self.device_name} clipboard.",
+                "data": {"text": text, "length": len(text), "device": self.device_id}
             })
 
         else:
@@ -843,8 +885,41 @@ class NodeRequestHandler(BaseHTTPRequestHandler):
             else:
                 resp_content = f"{self.device_name} local model processed: '{last_msg}'"
 
+            chat_id = f"chatcmpl-{uuid.uuid4().hex[:12]}"
+            choice_msg = {"role": "assistant", "content": resp_content}
+            if tool_calls:
+                choice_msg["tool_calls"] = [
+                    {
+                        "id": f"call_{uuid.uuid4().hex[:8]}",
+                        "type": "function",
+                        "function": {
+                            "name": tc.get("name", "tool"),
+                            "arguments": json.dumps(tc.get("arguments", {}))
+                        }
+                    }
+                    for tc in tool_calls
+                ]
+
+            prompt_toks = len(last_msg.split()) if last_msg else 5
+            compl_toks = len(resp_content.split()) if resp_content else 5
+
             chat_data = {
+                "id": chat_id,
+                "object": "chat.completion",
+                "created": int(time.time()),
                 "model": model_name,
+                "choices": [
+                    {
+                        "index": 0,
+                        "message": choice_msg,
+                        "finish_reason": "tool_calls" if tool_calls else "stop"
+                    }
+                ],
+                "usage": {
+                    "prompt_tokens": prompt_toks,
+                    "completion_tokens": compl_toks,
+                    "total_tokens": prompt_toks + compl_toks
+                },
                 "content": resp_content,
                 "tool_calls": tool_calls,
                 "finish_reason": "tool_calls" if tool_calls else "stop"
@@ -882,6 +957,105 @@ class NodeRequestHandler(BaseHTTPRequestHandler):
                 "message": f"Model '{model_name}' unloaded from {self.device_name} memory.",
                 "data": {"unloaded": True}
             })
+
+        # 9. Set Clipboard (/clipboard/set)
+        elif clean_path == "/clipboard/set":
+            text = body.get("text", "")
+            if len(text.encode("utf-8")) > 524288:
+                self._send_json_response(400, {"success": False, "message": "Clipboard text exceeds 512KB size limit."})
+                return
+            ok = set_linux_clipboard(text)
+            self._send_json_response(200, {
+                "success": ok,
+                "message": f"Copied {len(text)} characters to {self.device_name} clipboard." if ok else "Clipboard write command unavailable.",
+                "data": {"length": len(text), "device": self.device_id}
+            })
+
+        # 10. Clear Clipboard (/clipboard/clear)
+        elif clean_path == "/clipboard/clear":
+            ok = set_linux_clipboard("")
+            self._send_json_response(200, {
+                "success": True,
+                "message": f"Cleared clipboard on {self.device_name}.",
+                "data": {"device": self.device_id}
+            })
+
+        # 11. Secure File Upload (/files/upload)
+        elif clean_path == "/files/upload":
+            filename = body.get("filename", "").strip()
+            content_b64 = body.get("content_b64", "")
+            expected_sha = body.get("sha256")
+            target_dir = body.get("target_dir") or "~/Downloads/BrownTransfers"
+
+            safe_name = os.path.basename(filename).strip()
+            if not safe_name or safe_name.startswith(".") or ".." in safe_name:
+                self._send_json_response(400, {"success": False, "message": "Invalid or unsafe filename."})
+                return
+
+            out_dir = os.path.expanduser(target_dir)
+            os.makedirs(out_dir, exist_ok=True)
+            final_path = os.path.join(out_dir, safe_name)
+            tmp_path = os.path.join(out_dir, f".{safe_name}.tmp_{int(time.time())}")
+
+            try:
+                raw_bytes = base64.b64decode(content_b64)
+                if len(raw_bytes) > 52428800:
+                    self._send_json_response(400, {"success": False, "message": "File exceeds 50MB limit."})
+                    return
+                if expected_sha:
+                    actual_sha = hashlib.sha256(raw_bytes).hexdigest()
+                    if actual_sha.lower() != expected_sha.lower():
+                        self._send_json_response(400, {"success": False, "message": "Checksum mismatch."})
+                        return
+
+                with open(tmp_path, "wb") as f:
+                    f.write(raw_bytes)
+                os.replace(tmp_path, final_path)
+                self._send_json_response(200, {
+                    "success": True,
+                    "message": f"File '{safe_name}' saved to {final_path}.",
+                    "data": {"filename": safe_name, "path": final_path, "bytes": len(raw_bytes), "device": self.device_id}
+                })
+            except Exception as e:
+                if os.path.exists(tmp_path):
+                    try:
+                        os.remove(tmp_path)
+                    except Exception:
+                        pass
+                self._send_json_response(500, {"success": False, "message": f"Upload failed: {str(e)}"})
+
+        # 12. Secure File Download (/files/download)
+        elif clean_path == "/files/download":
+            filename = body.get("filename", "").strip()
+            source_dir = body.get("source_dir") or "~/Downloads/BrownTransfers"
+            safe_name = os.path.basename(filename).strip()
+            file_path = os.path.join(os.path.expanduser(source_dir), safe_name)
+
+            if not os.path.exists(file_path):
+                self._send_json_response(404, {"success": False, "message": f"File '{safe_name}' not found."})
+                return
+
+            try:
+                with open(file_path, "rb") as f:
+                    data = f.read()
+                if len(data) > 52428800:
+                    self._send_json_response(400, {"success": False, "message": "File exceeds 50MB limit."})
+                    return
+                sha256_hash = hashlib.sha256(data).hexdigest()
+                b64 = base64.b64encode(data).decode("utf-8")
+                self._send_json_response(200, {
+                    "success": True,
+                    "message": f"File '{safe_name}' ready ({len(data)} bytes).",
+                    "data": {
+                        "filename": safe_name,
+                        "content_b64": b64,
+                        "sha256": sha256_hash,
+                        "bytes": len(data),
+                        "device": self.device_id
+                    }
+                })
+            except Exception as e:
+                self._send_json_response(500, {"success": False, "message": f"Download failed: {str(e)}"})
 
         else:
             self._send_json_response(404, {"success": False, "message": f"Endpoint not found: {self.path}"})

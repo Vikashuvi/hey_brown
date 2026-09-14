@@ -58,6 +58,12 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
     "remoteNodeAuthToken": "",
     "remoteNodeAliases": ["remote", "secondary", "linux", "victus", "error boy", "error_boy"],
     "remoteNodeTimeout": 2.0,
+    # Generic Device Registry & AI Inference Routing
+    "localInferenceDeviceId": None,  # Dynamically resolved by capabilities if None
+    "localInferenceRuntime": "ollama",  # "ollama" | "llamacpp" | "openai_compatible"
+    "allowedTransferDirs": ["~/Downloads/BrownTransfers"],
+    "maxClipboardSizeBytes": 524288,      # 512 KB
+    "maxFileTransferSizeBytes": 52428800,  # 50 MB
 }
 
 

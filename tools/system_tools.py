@@ -271,3 +271,134 @@ class ManageLocalAITool(BaseTool):
                 data=res.data
             )
         return ToolResult(success=False, message=f"Unknown action '{action}'.")
+
+
+class GetClipboardTool(BaseTool):
+    """Tool to read the clipboard from a target device."""
+
+    def __init__(self, devices: Dict[str, DeviceAgent]):
+        self.devices = devices
+
+    @property
+    def name(self) -> str:
+        return "get_clipboard"
+
+    @property
+    def description(self) -> str:
+        return "Reads text from the clipboard of a target device."
+
+    def execute(self, device: str = "local", **kwargs) -> ToolResult:
+        target_device = self.devices.get(device.lower())
+        if not target_device:
+            return ToolResult(success=False, message=f"Device '{device}' not found.")
+        res = target_device.get_clipboard_text()
+        return ToolResult(success=res.success, message=res.message, data=res.data)
+
+
+class SetClipboardTool(BaseTool):
+    """Tool to write text to the clipboard of a target device."""
+
+    def __init__(self, devices: Dict[str, DeviceAgent]):
+        self.devices = devices
+
+    @property
+    def name(self) -> str:
+        return "set_clipboard"
+
+    @property
+    def description(self) -> str:
+        return "Sets text into the clipboard of a target device."
+
+    def execute(self, text: str, device: str = "local", **kwargs) -> ToolResult:
+        target_device = self.devices.get(device.lower())
+        if not target_device:
+            return ToolResult(success=False, message=f"Device '{device}' not found.")
+        res = target_device.set_clipboard_text(text)
+        return ToolResult(success=res.success, message=res.message, data=res.data)
+
+
+class SyncClipboardTool(BaseTool):
+    """Tool to copy clipboard contents from one device to another."""
+
+    def __init__(self, devices: Dict[str, DeviceAgent]):
+        self.devices = devices
+
+    @property
+    def name(self) -> str:
+        return "sync_clipboard"
+
+    @property
+    def description(self) -> str:
+        return "Copies clipboard text from a source device to a target device."
+
+    def execute(self, from_device: str, to_device: str, **kwargs) -> ToolResult:
+        src = self.devices.get(from_device.lower())
+        dst = self.devices.get(to_device.lower())
+        if not src:
+            return ToolResult(success=False, message=f"Source device '{from_device}' not found.")
+        if not dst:
+            return ToolResult(success=False, message=f"Target device '{to_device}' not found.")
+
+        read_res = src.get_clipboard_text()
+        if not read_res.success:
+            return ToolResult(success=False, message=f"Failed to read from {src.display_name}: {read_res.message}")
+
+        text = (read_res.data or {}).get("text", "")
+        write_res = dst.set_clipboard_text(text)
+        if not write_res.success:
+            return ToolResult(success=False, message=f"Failed to write to {dst.display_name}: {write_res.message}")
+
+        return ToolResult(
+            success=True,
+            message=f"Synchronized {len(text)} characters from {src.display_name} to {dst.display_name}.",
+            data={"from_device": from_device, "to_device": to_device, "length": len(text)}
+        )
+
+
+class TransferFileTool(BaseTool):
+    """Tool to safely transfer a file between two devices with checksum verification."""
+
+    def __init__(self, devices: Dict[str, DeviceAgent]):
+        self.devices = devices
+
+    @property
+    def name(self) -> str:
+        return "transfer_file"
+
+    @property
+    def description(self) -> str:
+        return "Safely transfers a file from a source device to a target destination device."
+
+    def execute(self, filename: str, from_device: str, to_device: str, target_dir: Optional[str] = None, source_dir: Optional[str] = None, **kwargs) -> ToolResult:
+        src = self.devices.get(from_device.lower())
+        dst = self.devices.get(to_device.lower())
+        if not src:
+            return ToolResult(success=False, message=f"Source device '{from_device}' not found.")
+        if not dst:
+            return ToolResult(success=False, message=f"Target device '{to_device}' not found.")
+
+        # Read from source
+        send_res = src.send_file(filename=filename, source_dir=source_dir)
+        if not send_res.success:
+            return ToolResult(success=False, message=f"Could not read '{filename}' from {src.display_name}: {send_res.message}")
+
+        data = send_res.data or {}
+        b64 = data.get("content_b64", "")
+        sha256 = data.get("sha256")
+
+        # Write to destination
+        recv_res = dst.receive_file(filename=filename, content_b64=b64, target_dir=target_dir, expected_sha256=sha256)
+        if not recv_res.success:
+            return ToolResult(success=False, message=f"Could not save '{filename}' on {dst.display_name}: {recv_res.message}")
+
+        return ToolResult(
+            success=True,
+            message=f"Transferred '{filename}' from {src.display_name} to {dst.display_name} ({data.get('bytes', 0)} bytes).",
+            data={
+                "filename": filename,
+                "from_device": from_device,
+                "to_device": to_device,
+                "bytes": data.get("bytes", 0),
+                "sha256": sha256
+            }
+        )

@@ -13,7 +13,8 @@
    - [Milestone 4 — Robust Barge-In & Acoustic Echo Protection](#milestone-4--robust-barge-in--acoustic-echo-protection)
    - [Milestone 5 — Configurable Wake Phrases & Natural Intent Routing](#milestone-5--configurable-wake-phrases--natural-intent-routing)
    - [Milestone 6 — Error Boy (Arch Linux) Remote Operation](#milestone-6--error-boy-arch-linux-remote-operation)
-   - [Milestone 7 — Living Desktop Mascot UI (feral-blob) [CURRENT]](#milestone-7--living-desktop-mascot-ui-feral-blob-current)
+   - [Milestone 7 — Living Desktop Mascot UI (feral-blob)](#milestone-7--living-desktop-mascot-ui-feral-blob)
+   - [Milestone 8 — Generic Device Architecture, Pluggable AI Runtime, Cross-Device Data & Clause Streaming [CURRENT]](#milestone-8--generic-device-architecture-pluggable-ai-runtime-cross-device-data--clause-streaming-current)
 3. [Test Suite Status](#test-suite-status)
 4. [Upcoming Roadmap](#upcoming-roadmap)
 
@@ -160,27 +161,62 @@ Brown operates as a dual-machine, multimodal voice assistant distributed across 
   4. **macOS Login Auto-Start** (`scripts/com.brown.ui.plist` & `scripts/install_launch_agent.sh`):
      * Directly launches native `Brown.app` binary upon macOS user login.
 
+---
+
+### Milestone 8 — Generic Device Architecture, Pluggable AI Runtime, Cross-Device Data & Clause Streaming [CURRENT]
+* **Goal**: Decouple Brown from any specific personal hardware or fixed machine identities, implementing an open-source platform supporting $N$ user-configured devices with typed capabilities, pluggable local AI engines, secure cross-device clipboard & file sync, and clause-level streaming speech.
+* **Accomplishments**:
+  * **Generic Device Registry & Records** (`core/device_resolver.py`):
+    * Implemented structured `DeviceRecord` model with capabilities, roles, operating systems, and connection states.
+    * Added query methods (`find_devices_by_capability`, `find_devices_by_role`, `find_device_for_local_ai`).
+    * De-personalized PydanticAI system prompt in `core/ai/brain.py` to dynamically inject device summaries from the active registry.
+  * **Unified Device Abstraction** (`agents/base.py` & `devices/base.py`):
+    * Unified `DeviceAgent` and `DeviceCommandResult` across packages with zero duplicate interfaces.
+  * **Pluggable Local AI Runtime** (`core/ai/runtime.py`):
+    * Created `LocalInferenceRuntime(ABC)` with `OllamaRuntime` and `OpenAICompatibleRuntime` (for llama.cpp / vLLM).
+    * Dynamic device resolution in `core/ai/local_provider.py` reading inference URL and device ID dynamically from the configured device.
+  * **Cross-Device Clipboard Sync** (`agents/local_agent.py`, `devices/remote_daemon.py`, `tools/system_tools.py`):
+    * Native macOS (`pbcopy`/`pbpaste`) and Linux (`wl-copy`/`wl-paste`/`xclip`) clipboard read/write with 512KB size limits.
+    * Implemented `GetClipboardTool`, `SetClipboardTool`, and `SyncClipboardTool`.
+  * **Secure Sandboxed File Transfer** (`agents/local_agent.py`, `devices/remote_daemon.py`, `tools/system_tools.py`):
+    * Path traversal rejection (`..`, leading `/`, `\`), SHA-256 cryptographic checksums, atomic `.tmp` file rename, and 50MB size limits.
+    * Implemented `TransferFileTool`.
+  * **Clause-Level Streaming Pipeline** (`voice/audio/clause_buffer.py`):
+    * Incremental token buffer extracting complete spoken clauses on punctuation boundaries (`.`, `!`, `?`, `;`, `,`) with abbreviation preservation.
+  * **Turn Pipeline Latency Telemetry** (`core/observability.py`):
+    * High-precision $T_0 \dots T_6$ milestone recording, measuring `time_to_first_token_ms`, `time_to_first_clause_ms`, and `time_to_first_audio_ms`.
 
 ---
 
 ## 🧪 Test Suite Status
 
-All unit and integration tests pass cleanly:
+All unit and integration tests pass cleanly across 21 test modules:
 
 | Test File | Coverage / Purpose | Status |
 |:---|:---|:---:|
-| `tests/test_audio_pipeline.py` | PyAudio stream & buffer stability | ✅ PASS |
-| `tests/test_barge_in.py` | Speech interruption & acoustic grace period | ✅ PASS |
-| `tests/test_brown_wake.py` | Multi-phrase wake detection & phonetic matching | ✅ PASS |
-| `tests/test_device_agents.py` | Paperball macOS & Error Boy capabilities + running apps | ✅ PASS |
-| `tests/test_error_boy_server.py` | Error Boy Arch daemon lifecycle, auth & typed endpoints | ✅ PASS |
-| `tests/test_event_bridge.py` | Thread-safe WebSocket UIEventBridge server & broadcast | ✅ PASS |
-| `tests/test_intent_router.py` | Regex intent parsing & multi-device routing | ✅ PASS |
-| `tests/test_live_models.py` | Silero VAD & Faster-Whisper model loading | ✅ PASS |
-| `tests/test_orchestrator.py` | Full orchestrator lifecycle & state transitions | ✅ PASS |
-| `tests/test_state_machine.py` | Valid/invalid state machine transitions | ✅ PASS |
+| `tests/test_generic_device_registry.py` | $N$-device registration, capability queries, dynamic prompt summary | ✅ PASS (5/5) |
+| `tests/test_local_ai_runtime.py` | `OllamaRuntime`, `OpenAICompatibleRuntime`, dynamic device resolution | ✅ PASS (4/4) |
+| `tests/test_local_ai_lifecycle.py` | Local AI warm, idle unload, resource checks, OpenAI compatibility | ✅ PASS (8/8) |
+| `tests/test_clipboard_and_file_transfer.py` | Cross-device clipboard, path traversal defense, checksum atomic writes | ✅ PASS (7/7) |
+| `tests/test_clause_streaming.py` | ClauseBuffer token chunking, boundary parsing, $T_0 \dots T_6$ telemetry | ✅ PASS (5/5) |
+| `tests/test_conversational_brain.py` | PydanticAI multi-turn reasoning, typed tools, offline device handling | ✅ PASS (5/5) |
+| `tests/test_device_agents.py` | Local host and remote capability agents | ✅ PASS (5/5) |
+| `tests/test_remote_daemon.py` | Linux daemon REST endpoints, auth tokens, system health | ✅ PASS (3/3) |
+| `tests/test_ai_router.py` | Local vs cloud routing and privacy policy checks | ✅ PASS (6/6) |
+| `tests/test_intent_router.py` | Dynamic alias and device intent matching | ✅ PASS (5/5) |
+| `tests/test_natural_language_intent.py` | Freeform intent parsing with DeviceResolver | ✅ PASS (5/5) |
+| `tests/test_settings.py` | Persistent JSON settings, thread safety, defaults | ✅ PASS (2/2) |
+| `tests/test_observability.py` | Trace correlation IDs, secret masking, metrics | ✅ PASS (2/2) |
+| `tests/test_state_machine.py` | Valid state machine transitions & locks | ✅ PASS (2/2) |
+| `tests/test_audio_pipeline.py` | PyAudio ring buffers & mono 16kHz capture | ✅ PASS (1/1) |
+| `tests/test_barge_in.py` | Frame-level playback cancellation & echo shields | ✅ PASS (2/2) |
+| `tests/test_brown_wake.py` | Configurable wake phrases & phonetic triggers | ✅ PASS (3/3) |
+| `tests/test_wake_calibration.py` | Acoustic energy calibration & ambient noise rejection | ✅ PASS (3/3) |
+| `tests/test_event_bridge.py` | Thread-safe WebSocket mascot broadcast bridge | ✅ PASS (1/1) |
+| `tests/test_live_models.py` | Silero VAD v5 & Faster-Whisper model loading | ✅ PASS (2/2) |
+| `tests/test_orchestrator.py` | Full orchestrator lifecycle loop | ✅ PASS (2/2) |
 
-**Current Score:** **26 / 26 Tests Passing** (100%)
+**Current Score:** **78 / 78 Tests Passing** (100%)
 
 
 ---
